@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>CyberGuard</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    user-select: none;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+
+  /* ── Layout ── */
+  .app   { display: flex; height: 100vh; }
+  .main  { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .page  { flex: 1; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 220px; min-width: 220px; background: #1c1c1e; display: flex; flex-direction: column; -webkit-app-region: drag; }
+  .sidebar * { -webkit-app-region: no-drag; }
+  .sb-header { padding: 54px 20px 18px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .sb-logo   { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .sb-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg,#0071e3,#5ac8fa); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .sb-logo-text { color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -0.3px; }
+  .sb-status    { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+  .sb-dot       { width: 7px; height: 7px; border-radius: 50%; }
+  .s-green { color:#34c759; } .s-green .sb-dot { background:#34c759; box-shadow:0 0 6px rgba(52,199,89,.5); }
+  .s-orange{ color:#ff9f0a; } .s-orange .sb-dot{ background:#ff9f0a; }
+  .s-red   { color:#ff3b30; } .s-red    .sb-dot{ background:#ff3b30; }
+
+  .sb-nav  { flex: 1; padding: 12px 10px; overflow-y: auto; }
+  .nav-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 12px; border-radius: 8px; border: none;
+    background: transparent; color: #86868b; cursor: pointer;
+    font-size: 14px; font-family: inherit; text-align: left;
+    margin-bottom: 2px; transition: background .15s, color .15s;
+  }
+  .nav-btn:hover  { background: rgba(255,255,255,.07); color: #d1d1d6; }
+  .nav-btn.active { background: rgba(255,255,255,.12); color: #fff; font-weight: 600; }
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+  .nav-badge { margin-left:auto; min-width:18px; height:18px; background:#ff3b30; color:#fff; border-radius:9px; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 5px; }
+  .sb-footer { padding:14px 20px; border-top:1px solid rgba(255,255,255,.07); font-size:11px; color:#48484a; line-height:1.6; }
+
+  /* ── Update banner ── */
+  .update-bar { background:#0071e3; color:#fff; padding:10px 40px; font-size:13px; display:flex; align-items:center; justify-content:space-between; }
+  .update-bar button { background:rgba(255,255,255,.2); border:none; color:#fff; padding:5px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; font-family:inherit; }
+  .update-bar button:hover { background:rgba(255,255,255,.3); }
+
+  /* ── Status banner ── */
+  .banner { padding:34px 40px 30px; display:flex; align-items:center; justify-content:space-between; -webkit-app-region:drag; }
+  .banner * { -webkit-app-region:no-drag; }
+  .b-green  { background:linear-gradient(135deg,#0a5c2b,#1a9c48); }
+  .b-orange { background:linear-gradient(135deg,#7a4a00,#c47800); }
+  .b-red    { background:linear-gradient(135deg,#8b0000,#cc1a1a); }
+  .banner h1 { color:#fff; font-size:24px; font-weight:700; letter-spacing:-.5px; margin-bottom:5px; }
+  .banner p  { color:rgba(255,255,255,.75); font-size:13px; }
+  .score-ring { width:76px; height:76px; border-radius:50%; background:rgba(255,255,255,.15); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
+  .score-num { font-size:24px; font-weight:700; line-height:1; }
+  .score-lbl { font-size:10px; opacity:.75; margin-top:2px; font-weight:500; letter-spacing:.5px; }
+
+  /* ── Cards grid ── */
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; padding:20px 40px; }
+  .card  { background:#fff; border-radius:14px; padding:18px 20px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04); }
+  .card-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:12px; }
+  .card-val { font-size:34px; font-weight:700; color:#1d1d1f; line-height:1; letter-spacing:-1px; }
+  .card-unit{ font-size:13px; font-weight:400; color:#86868b; }
+  .card-sub { font-size:11px; color:#86868b; margin-top:7px; }
+  .bar-track{ height:4px; background:#e8e8ed; border-radius:2px; margin-top:10px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:2px; transition:width .6s ease,background .3s; }
+  .c-green{ background:#34c759; } .c-orange{ background:#ff9f0a; } .c-red{ background:#ff3b30; } .c-blue{ background:#0071e3; }
+
+  /* ── Page header ── */
+  .ph { padding:28px 40px 20px; display:flex; align-items:flex-start; justify-content:space-between; -webkit-app-region:drag; }
+  .ph * { -webkit-app-region:no-drag; }
+  .ph h2 { font-size:22px; font-weight:700; color:#1d1d1f; letter-spacing:-.4px; }
+  .ph p  { font-size:13px; color:#86868b; margin-top:3px; }
+
+  /* ── Section ── */
+  .sec { padding:0 40px 28px; }
+  .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .sec-title{ font-size:16px; font-weight:600; color:#1d1d1f; }
+  .sec-sub  { font-size:12px; color:#86868b; margin-top:2px; }
+
+  /* ── Buttons ── */
+  .btn { border:none; cursor:pointer; font-family:inherit; border-radius:8px; font-weight:500; transition:background .15s,transform .1s; display:inline-flex; align-items:center; gap:6px; }
+  .btn:active { transform:scale(.97); }
+  .btn-blue { background:#0071e3; color:#fff; padding:8px 16px; font-size:13px; }
+  .btn-blue:hover { background:#0077ed; }
+  .btn-ghost{ background:rgba(0,0,0,.06); color:#1d1d1f; padding:7px 14px; font-size:13px; }
+  .btn-ghost:hover{ background:rgba(0,0,0,.1); }
+  .btn-sm { padding:5px 11px; font-size:12px; }
+  .btn-danger{ background:#fff0f0; color:#ff3b30; padding:6px 12px; font-size:12px; }
+  .btn-danger:hover{ background:#ffe5e4; }
+
+  /* ── Threat feed ── */
+  .feed-list { display:flex; flex-direction:column; gap:8px; }
+  .feed-item { background:#fff; border-radius:10px; padding:11px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); animation:fadeIn .3s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+  .feed-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .d-critical{ background:#ff3b30; box-shadow:0 0 6px rgba(255,59,48,.4); }
+  .d-high    { background:#ff9f0a; }
+  .d-medium  { background:#ffcc00; }
+  .d-low     { background:#34c759; }
+  .feed-type { font-size:13px; font-weight:600; color:#1d1d1f; flex:1; }
+  .feed-src  { font-size:12px; color:#86868b; font-family:'SF Mono',Menlo,monospace; }
+  .feed-time { font-size:11px; color:#aeaeb2; white-space:nowrap; }
+  .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+  .badge-critical{ background:#ffe5e4; color:#ff3b30; }
+  .badge-high    { background:#fff3e0; color:#c47800; }
+  .badge-medium  { background:#fffbe0; color:#a07800; }
+  .badge-low     { background:#e8fae8; color:#1a7a3c; }
+  .badge-blocked { background:#e8fae8; color:#1a7a3c; }
+  .badge-cisa    { background:#e8f0fe; color:#0071e3; }
+  .badge-cybernews{ background:#f2e8fe; color:#7c3aed; }
+  .badge-nvd     { background:#ffe8e8; color:#dc2626; }
+
+  /* ── Security checks ── */
+  .checks-list { display:flex; flex-direction:column; gap:10px; }
+  .check { background:#fff; border-radius:12px; padding:15px 18px; display:flex; align-items:center; gap:14px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .check-ico { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+  .check.pass .check-ico { background:#e8fae8; }
+  .check.warn .check-ico { background:#fff3e0; }
+  .check.fail .check-ico { background:#ffe5e4; }
+  .check.unknown .check-ico { background:#f2f2f7; }
+  .check-info { flex:1; }
+  .check-name { font-size:14px; font-weight:600; color:#1d1d1f; margin-bottom:3px; }
+  .check-detail{ font-size:12px; color:#86868b; }
+  .check-fix  { font-size:11px; color:#0071e3; margin-top:4px; }
+  .check-badge{ font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; text-transform:uppercase; letter-spacing:.3px; flex-shrink:0; }
+  .cb-pass  { background:#e8fae8; color:#1a7a3c; }
+  .cb-warn  { background:#fff3e0; color:#c47800; }
+  .cb-fail  { background:#ffe5e4; color:#cc1a1a; }
+  .cb-unknown{ background:#f2f2f7; color:#86868b; }
+
+  /* ── Network ── */
+  .net-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
+  .stat-pill { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+  .sp-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
+  .sp-val { font-size:26px; font-weight:700; color:#1d1d1f; letter-spacing:-.5px; }
+  .sp-unit{ font-size:12px; color:#86868b; font-weight:400; }
+  .devices-list{ display:flex; flex-direction:column; gap:8px; }
+  .device { background:#fff; border-radius:10px; padding:13px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .dev-icon { font-size:22px; flex-shrink:0; }
+  .dev-name { font-size:14px; font-weight:600; color:#1d1d1f; }
+  .dev-mac  { font-size:11px; color:#aeaeb2; font-family:monospace; }
+  .dev-ip   { font-size:12px; color:#86868b; font-family:monospace; }
+  .online   { display:flex; align-items:center; gap:5px; font-size:12px; color:#34c759; font-weight:500; }
+  .online-dot{ width:6px; height:6px; border-radius:50%; background:#34c759; }
+
+  /* ── Processes ── */
+  .proc-wrap{ background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .proc-table{ width:100%; border-collapse:collapse; }
+  .proc-table th{ padding:10px 16px; text-align:left; font-size:11px; font-weight:600; color:#86868b; text-transform:uppercase; letter-spacing:.5px; background:#f9f9fb; border-bottom:1px solid #e8e8ed; }
+  .proc-table td{ padding:9px 16px; font-size:13px; border-bottom:1px solid #f2f2f7; }
+  .proc-table tr:last-child td{ border-bottom:none; }
+  .proc-table tr:hover td{ background:#fafafa; }
+  .proc-sus td{ background:#fff5f5!important; }
+  .proc-sus td:first-child{ border-left:3px solid #ff3b30; }
+  .pbar-wrap{ display:flex; align-items:center; gap:8px; }
+  .pbar-track{ flex:1; max-width:80px; height:4px; background:#e8e8ed; border-radius:2px; overflow:hidden; }
+  .pbar-fill { height:100%; border-radius:2px; background:#0071e3; transition:width .4s; }
+  .sus-tag  { font-size:10px; background:#ffe5e4; color:#ff3b30; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:6px; }
+
+  /* ── Intelligence feed ── */
+  .feed-tabs { display:flex; gap:6px; margin-bottom:16px; }
+  .feed-tab  { padding:6px 14px; border-radius:20px; border:none; cursor:pointer; font-size:13px; font-family:inherit; font-weight:500; transition:background .15s,color .15s; background:transparent; color:#86868b; }
+  .feed-tab:hover  { background:rgba(0,0,0,.05); color:#1d1d1f; }
+  .feed-tab.active { background:#0071e3; color:#fff; }
+  .intel-item { background:#fff; border-radius:12px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.07); margin-bottom:8px; animation:fadeIn .3s ease; }
+  .intel-hdr  { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .intel-title{ font-size:14px; font-weight:600; color:#1d1d1f; flex:1; line-height:1.3; }
+  .intel-summary{ font-size:12px; color:#86868b; line-height:1.5; margin-bottom:8px; }
+  .intel-footer{ display:flex; align-items:center; gap:8px; }
+  .intel-date { font-size:11px; color:#aeaeb2; }
+  .intel-link { font-size:12px; color:#0071e3; cursor:pointer; text-decoration:none; font-weight:500; margin-left:auto; }
+  .intel-link:hover { text-decoration:underline; }
+
+  /* ── Settings ── */
+  .settings-section { background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:20px; }
+  .settings-hdr { padding:16px 20px 14px; border-bottom:1px solid #f2f2f7; }
+  .settings-hdr h3{ font-size:15px; font-weight:600; color:#1d1d1f; }
+  .settings-hdr p { font-size:12px; color:#86868b; margin-top:2px; }
+  .setting-row { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid #f2f2f7; }
+  .setting-row:last-child{ border-bottom:none; }
+  .setting-info { flex:1; }
+  .setting-name { font-size:14px; font-weight:500; color:#1d1d1f; }
+  .setting-desc { font-size:12px; color:#86868b; margin-top:2px; }
+  .api-input-wrap{ display:flex; gap:8px; align-items:center; flex-shrink:0; }
+  .api-input { padding:7px 12px; border-radius:8px; border:1.5px solid #e0e0e6; font-size:13px; font-family:inherit; outline:none; width:220px; background:#fff; transition:border .15s; }
+  .api-input:focus{ border-color:#0071e3; }
+  .conn-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .conn-ok { background:#34c759; }
+  .conn-fail{ background:#ff3b30; }
+  .conn-none{ background:#aeaeb2; }
+  .privacy-notice { background:#f0f6ff; border-radius:10px; padding:14px 16px; display:flex; gap:12px; align-items:flex-start; margin-top:4px; }
+  .privacy-icon { font-size:20px; flex-shrink:0; margin-top:1px; }
+  .privacy-text { font-size:12px; color:#3a3a3c; line-height:1.6; }
+  .privacy-text strong { color:#1d1d1f; }
+
+  /* ── Misc ── */
+  .empty { text-align:center; padding:40px; color:#aeaeb2; font-size:14px; }
+  .empty-icon{ font-size:40px; margin-bottom:12px; }
+  .spinner { width:24px; height:24px; border:3px solid #e8e8ed; border-top-color:#0071e3; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .loading-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#86868b; gap:14px; }
+  input[type=text],input[type=password]{ user-select:text; -webkit-user-select:text; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
+const cg = window.cyberguard;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function timeAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60)   return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+function fillCls(pct) { return pct > 80 ? 'c-red' : pct > 60 ? 'c-orange' : 'c-green'; }
+function devIcon(h) {
+  const n = h.toLowerCase();
+  if (/iphone|phone/.test(n)) return '📱';
+  if (/ipad/.test(n))         return '📱';
+  if (/mac|book/.test(n))     return '💻';
+  if (/apple/.test(n))        return '🍎';
+  if (/tv/.test(n))           return '📺';
+  if (/print/.test(n))        return '🖨';
+  if (/nas|syno/.test(n))     return '💾';
+  if (/router|gate/.test(n))  return '📡';
+  return '🖥';
+}
+const ICONS = { firewall:'🔥', lock:'🔒', shield:'🛡', gatekeeper:'🚪', refresh:'🔄', screenlock:'🖥' };
+const APIS  = [
+  { key:'virustotal', name:'VirusTotal', desc:'File, URL, and IP scanning against 70+ AV engines', link:'https://www.virustotal.com/gui/my-apikey' },
+  { key:'abuseipdb',  name:'AbuseIPDB',  desc:'IP reputation and threat intelligence database',    link:'https://www.abuseipdb.com/account/api' },
+  { key:'shodan',     name:'Shodan',     desc:'Search engine for internet-connected devices',      link:'https://account.shodan.io/' },
+  { key:'hibp',       name:'Have I Been Pwned', desc:'Monitor email addresses for data breaches',  link:'https://haveibeenpwned.com/API/Key' },
+];
+
+// ── Components ────────────────────────────────────────────────────────────────
+function Sidebar({ view, setView, statusCls, statusLabel, threatCount }) {
+  const nav = [
+    { id:'overview',     label:'Overview',       icon:'🛡' },
+    { id:'intelligence', label:'Intelligence',   icon:'📡' },
+    { id:'network',      label:'Network',        icon:'🌐' },
+    { id:'security',     label:'Security',       icon:'✅' },
+    { id:'processes',    label:'Processes',      icon:'⚙️' },
+    { id:'threats',      label:'Threats',        icon:'⚠️', badge: threatCount },
+    { id:'settings',     label:'Settings',       icon:'🔧' },
+  ];
+  return (
+    <div className="sidebar">
+      <div className="sb-header">
+        <div className="sb-logo"><div className="sb-logo-icon">🛡</div><div className="sb-logo-text">CyberGuard</div></div>
+        <div className={`sb-status ${statusCls}`}><div className="sb-dot" />{statusLabel}</div>
+      </div>
+      <nav className="sb-nav">
+        {nav.map(n => (
+          <button key={n.id} className={`nav-btn ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
+            <span className="nav-icon">{n.icon}</span>
+            <span>{n.label}</span>
+            {n.badge > 0 && <span className="nav-badge">{n.badge > 99 ? '99+' : n.badge}</span>}
+          </button>
+        ))}
+      </nav>
+      <div className="sb-footer">CyberGuard v1.0<br/><span style={{color:'#34c759'}}>●</span> Real-time monitoring</div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, unit, sub, barPct }) {
+  return (
+    <div className="card">
+      <div className="card-lbl">{label}</div>
+      <div><span className="card-val">{value}</span>{unit && <span className="card-unit"> {unit}</span>}</div>
+      {sub && <div className="card-sub">{sub}</div>}
+      {barPct !== undefined && (
+        <div className="bar-track"><div className={`bar-fill ${fillCls(barPct)}`} style={{width:`${barPct}%`}} /></div>
+      )}
+    </div>
+  );
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────────
+function OverviewPage({ stats, checks, threats }) {
+  const score = useMemo(()=>checks.length ? Math.round(checks.filter(c=>c.status==='pass').length/checks.length*100) : 0,[checks]);
+  const fails  = checks.filter(c=>c.status==='fail').length;
+  const warns  = checks.filter(c=>c.status==='warn').length;
+  let bcls, btitle, bsub;
+  if (fails)       { bcls='b-red';    btitle=`${fails} Critical Issue${fails>1?'s':''}`; bsub='Immediate action required.'; }
+  else if (warns)  { bcls='b-orange'; btitle=`${warns} Warning${warns>1?'s':''} to Review`; bsub='Your Mac is mostly protected.'; }
+  else if (!checks.length){ bcls='b-orange'; btitle='Running security checks…'; bsub=''; }
+  else             { bcls='b-green';  btitle='Your Mac is Protected'; bsub='All checks passing. Monitoring is active.'; }
+
+  return (
+    <div className="page">
+      <div className={`banner ${bcls}`}>
+        <div><h1>{btitle}</h1><p>{bsub}</p></div>
+        <div className="score-ring"><div className="score-num">{score}</div><div className="score-lbl">SCORE</div></div>
+      </div>
+      <div className="cards">
+        <StatCard label="CPU" value={stats.cpu} unit="%" sub={stats.cpuModel} barPct={stats.cpu} />
+        <StatCard label="Memory" value={stats.ram} unit="%" sub={`${stats.ramUsedGB} / ${stats.ramTotalGB} GB`} barPct={stats.ram} />
+        <StatCard label="Disk" value={stats.disk||0} unit="%" sub={`${stats.diskUsedGB} / ${stats.diskTotalGB} GB`} barPct={stats.disk||0} />
+        <StatCard label="Network In" value={stats.netInKB} unit=" KB/s" sub={`Out: ${stats.netOutKB} KB/s`} />
+      </div>
+      <div className="sec">
+        <div className="sec-hdr">
+          <div><div className="sec-title">Recent Threats</div><div className="sec-sub">{threats.length ? `${threats.length} events — all blocked` : 'No threats detected'}</div></div>
+        </div>
+        {threats.length === 0
+          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected — system is clean</div>
+          : <div className="feed-list">
+              {threats.slice(0,8).map(t=>(
+                <div key={t.id} className="feed-item">
+                  <div className={`feed-dot d-${t.severity.toLowerCase()}`} />
+                  <div className="feed-type">{t.type}</div>
+                  <div className="feed-src">{t.source}</div>
+                  <span className={`badge badge-${t.severity.toLowerCase()}`}>{t.severity}</span>
+                  {t.blocked && <span className="badge badge-blocked">Blocked</span>}
+                  <div className="feed-time">{timeAgo(t.timestamp)}</div>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Intelligence ──────────────────────────────────────────────────────────────
+function IntelligencePage({ feedItems, onRefresh }) {
+  const [tab, setTab]         = useState('all');
+  const [loading, setLoading] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
+
+  const refresh = async () => { setLoading(true); await onRefresh(); setLastUpdate(new Date()); setLoading(false); };
+
+  useEffect(() => { if (feedItems.length === 0) refresh(); }, []);
+
+  const filtered = tab === 'all' ? feedItems : feedItems.filter(i => i.source.toLowerCase() === tab);
+
+  const srcBadge = s => {
+    const cls = s === 'CISA' ? 'badge-cisa' : s === 'CyberNews' ? 'badge-cybernews' : 'badge-nvd';
+    return <span className={`badge ${cls}`}>{s}</span>;
+  };
+
+  return (
+    <div className="page">
+      <div className="ph">
+        <div><h2>Threat Intelligence</h2><p>Live feeds from CISA, CyberNews, and NVD{lastUpdate ? ` · Updated ${timeAgo(lastUpdate.toISOString())}` : ''}</p></div>
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading ? '…' : '↻'} Refresh</button>
+      </div>
+      <div className="sec" style={{paddingTop:0}}>
+        <div className="feed-tabs">
+          {['all','CISA','CyberNews','NVD'].map(t=>(
+            <button key={t} className={`feed-tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>
+              {t==='all'?`All (${feedItems.length})`:t}
+            </button>
+          ))}
+        </div>
+        {loading && <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>}
+        {!loading && filtered.length === 0 && (
+          <div className="empty"><div className="empty-icon">📡</div>No intelligence items — click Refresh to fetch feeds</div>
+        )}
+        {!loading && filtered.map((item,i) => (
+          <div key={item.id||i} className="intel-item">
+            <div className="intel-hdr">
+              {srcBadge(item.source)}
+              {item.severity && <span className={`badge badge-${item.severity.toLowerCase()}`}>{item.severity}</span>}
+              {item.score && <span className="badge badge-nvd">CVSS {item.score}</span>}
+            </div>
+            <div className="intel-title">{item.title}</div>
+            {item.summary && <div className="intel-summary">{item.summary.slice(0,200)}{item.summary.length>200?'…':''}</div>}
+            <div className="intel-footer">
+              <div className="intel-date">{item.date ? new Date(item.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
+              {item.link && <a className="intel-link" onClick={()=>cg.openUrl(item.link)}>Read more →</a>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Network ───────────────────────────────────────────────────────────────────
+function NetworkPage({ devices, stats, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
+  return (
+    <div className="page">
+      <div className="ph">
+        <div><h2>Network</h2><p>Devices on your local network</p></div>
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'} Refresh</button>
+      </div>
+      <div className="sec" style={{paddingTop:0}}>
+        <div className="net-stats">
+          <div className="stat-pill"><div className="sp-lbl">Devices</div><div className="sp-val">{devices.length}<span className="sp-unit"> found</span></div></div>
+          <div className="stat-pill"><div className="sp-lbl">Network In</div><div className="sp-val">{stats.netInKB}<span className="sp-unit"> KB/s</span></div></div>
+          <div className="stat-pill"><div className="sp-lbl">Network Out</div><div className="sp-val">{stats.netOutKB}<span className="sp-unit"> KB/s</span></div></div>
+        </div>
+        {devices.length === 0
+          ? <div className="empty"><div className="empty-icon">🌐</div>No devices found — try Refresh</div>
+          : <div className="devices-list">
+              {devices.map((d,i)=>(
+                <div key={i} className="device">
+                  <div className="dev-icon">{devIcon(d.hostname)}</div>
+                  <div style={{flex:1}}><div className="dev-name">{d.hostname}</div><div className="dev-mac">{d.mac}</div></div>
+                  <div style={{textAlign:'right'}}><div className="dev-ip">{d.ip}</div><div className="online" style={{justifyContent:'flex-end',marginTop:4}}><div className="online-dot" />Online</div></div>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Security ──────────────────────────────────────────────────────────────────
+function SecurityPage({ checks, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
+  const pass = checks.filter(c=>c.status==='pass').length;
+  return (
+    <div className="page">
+      <div className="ph">
+        <div><h2>Security Checks</h2><p>{checks.length ? `${pass} of ${checks.length} passing` : 'Loading…'}</p></div>
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'} Refresh</button>
+      </div>
+      <div className="sec" style={{paddingTop:0}}>
+        {checks.length === 0
+          ? <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>
+          : <div className="checks-list">
+              {checks.map(c=>(
+                <div key={c.id} className={`check ${c.status}`}>
+                  <div className="check-ico">{ICONS[c.icon]||'🔍'}</div>
+                  <div className="check-info">
+                    <div className="check-name">{c.name}</div>
+                    <div className="check-detail">{c.detail}</div>
+                    {c.status !== 'pass' && c.fix && <div className="check-fix">→ {c.fix}</div>}
+                  </div>
+                  <div className={`check-badge cb-${c.status}`}>
+                    {c.status==='pass'?'✓ Pass':c.status==='warn'?'⚠ Warn':c.status==='fail'?'✗ Fail':'? Unknown'}
+                  </div>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Processes ─────────────────────────────────────────────────────────────────
+function ProcessesPage({ processes, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter]   = useState('');
+  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
+  const shown = processes.filter(p => !filter || p.name.toLowerCase().includes(filter.toLowerCase()));
+  const susCnt = processes.filter(p=>p.suspicious).length;
+  return (
+    <div className="page">
+      <div className="ph">
+        <div><h2>Processes</h2><p>{processes.length} running{susCnt>0&&<span style={{color:'#ff3b30',marginLeft:8}}>⚠ {susCnt} suspicious</span>}</p></div>
+        <div style={{display:'flex',gap:8}}>
+          <input className="api-input" style={{width:140}} placeholder="Filter…" value={filter} onChange={e=>setFilter(e.target.value)} />
+          <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'}</button>
+        </div>
+      </div>
+      <div className="sec" style={{paddingTop:0}}>
+        {processes.length === 0
+          ? <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>
+          : <div className="proc-wrap">
+              <table className="proc-table">
+                <thead><tr><th>Name</th><th>PID</th><th>CPU</th><th>Memory</th><th>User</th></tr></thead>
+                <tbody>
+                  {shown.map(p=>(
+                    <tr key={p.pid} className={p.suspicious?'proc-sus':''}>
+                      <td style={{fontWeight:500}}>{p.name}{p.suspicious&&<span className="sus-tag">SUSPICIOUS</span>}</td>
+                      <td style={{color:'#86868b',fontFamily:'monospace',fontSize:12}}>{p.pid}</td>
+                      <td><div className="pbar-wrap"><div className="pbar-track"><div className="pbar-fill" style={{width:`${Math.min(p.cpu,100)}%`}} /></div><span style={{fontSize:12,color:p.cpu>50?'#ff3b30':'#1d1d1f',minWidth:36}}>{p.cpu}%</span></div></td>
+                      <td style={{fontSize:13}}>{p.mem}%</td>
+                      <td style={{fontSize:12,color:'#86868b'}}>{p.user}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Threats ───────────────────────────────────────────────────────────────────
+function ThreatsPage({ threats }) {
+  return (
+    <div className="page">
+      <div className="ph"><div><h2>Threats</h2><p>{threats.length === 0 ? 'No threats recorded' : `${threats.length} events — all blocked`}</p></div></div>
+      <div className="sec" style={{paddingTop:0}}>
+        {threats.length === 0
+          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected</div>
+          : <div className="feed-list">
+              {threats.map(t=>(
+                <div key={t.id} className="feed-item">
+                  <div className={`feed-dot d-${t.severity.toLowerCase()}`} />
+                  <div style={{flex:1}}><div className="feed-type">{t.type}</div><div style={{fontSize:12,color:'#86868b',marginTop:2}}>Source: <span style={{fontFamily:'monospace'}}>{t.source}</span></div></div>
+                  <span className={`badge badge-${t.severity.toLowerCase()}`}>{t.severity}</span>
+                  {t.blocked && <span className="badge badge-blocked">Blocked</span>}
+                  <div className="feed-time">{timeAgo(t.timestamp)}</div>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function SettingsPage({ version }) {
+  const [creds,    setCreds]    = useState({});
+  const [inputs,   setInputs]   = useState({});
+  const [show,     setShow]     = useState({});
+  const [testing,  setTesting]  = useState({});
+  const [results,  setResults]  = useState({});
+  const [saved,    setSaved]    = useState({});
+
+  useEffect(() => { cg.credGetMasked().then(setCreds); }, []);
+
+  const handleSave = async (key) => {
+    const val = inputs[key];
+    if (!val) return;
+    await cg.credSet(key, val);
+    setInputs(p => ({ ...p, [key]: '' }));
+    setSaved(p => ({ ...p, [key]: true }));
+    setTimeout(() => setSaved(p => ({ ...p, [key]: false })), 2000);
+    cg.credGetMasked().then(setCreds);
+  };
+
+  const handleDelete = async (key) => {
+    await cg.credDelete(key);
+    setResults(p => ({ ...p, [key]: null }));
+    cg.credGetMasked().then(setCreds);
+  };
+
+  const handleTest = async (key) => {
+    setTesting(p => ({ ...p, [key]: true }));
+    const r = await cg.credTest(key);
+    setResults(p => ({ ...p, [key]: r }));
+    setTesting(p => ({ ...p, [key]: false }));
+  };
+
+  return (
+    <div className="page">
+      <div className="ph"><div><h2>Settings</h2><p>App configuration and API integrations</p></div></div>
+      <div className="sec" style={{paddingTop:0}}>
+
+        {/* About */}
+        <div className="settings-section">
+          <div className="settings-hdr"><h3>About</h3></div>
+          <div className="setting-row">
+            <div className="setting-info"><div className="setting-name">Version</div><div className="setting-desc">CyberGuard v{version}</div></div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>cg.checkForUpdates()}>Check for Updates</button>
+          </div>
+          <div className="setting-row">
+            <div className="setting-info"><div className="setting-name">Source Code</div><div className="setting-desc">github.com/TushaeBXN/cyberguard</div></div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>cg.openUrl('https://github.com/TushaeBXN/cyberguard')}>Open on GitHub</button>
+          </div>
+          <div className="setting-row">
+            <div className="setting-info"><div className="setting-name">Report an Issue</div><div className="setting-desc">Submit bugs or feature requests on GitHub</div></div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>cg.openUrl('https://github.com/TushaeBXN/cyberguard/issues')}>Open Issues</button>
+          </div>
+        </div>
+
+        {/* API Integrations */}
+        <div className="settings-section">
+          <div className="settings-hdr">
+            <h3>API Integrations</h3>
+            <p>Connect external security services to power real-time threat analysis</p>
+          </div>
+          {APIS.map(api => {
+            const hasCred   = !!creds[api.key];
+            const testRes   = results[api.key];
+            const isTesting = testing[api.key];
+            return (
+              <div key={api.key} className="setting-row" style={{flexWrap:'wrap',gap:12}}>
+                <div className="setting-info" style={{minWidth:200}}>
+                  <div className="setting-name" style={{display:'flex',alignItems:'center',gap:8}}>
+                    {api.name}
+                    <div className={`conn-dot ${hasCred ? (testRes?.ok ? 'conn-ok' : 'conn-none') : 'conn-none'}`} title={hasCred ? 'Key saved' : 'Not configured'} />
+                  </div>
+                  <div className="setting-desc">{api.desc}</div>
+                  {testRes && <div style={{fontSize:11,marginTop:4,color:testRes.ok?'#34c759':'#ff3b30'}}>{testRes.ok?'✓':''} {testRes.msg}</div>}
+                </div>
+                <div className="api-input-wrap">
+                  {hasCred
+                    ? <>
+                        <span style={{fontSize:13,color:'#86868b',fontFamily:'monospace'}}>{creds[api.key]}</span>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>handleTest(api.key)} disabled={isTesting}>{isTesting?'…':'Test'}</button>
+                        <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(api.key)}>Remove</button>
+                      </>
+                    : <>
+                        <input
+                          className="api-input"
+                          type={show[api.key]?'text':'password'}
+                          placeholder={`Enter ${api.name} API key`}
+                          value={inputs[api.key]||''}
+                          onChange={e=>setInputs(p=>({...p,[api.key]:e.target.value}))}
+                          onKeyDown={e=>e.key==='Enter'&&handleSave(api.key)}
+                        />
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setShow(p=>({...p,[api.key]:!p[api.key]}))}>
+                          {show[api.key]?'Hide':'Show'}
+                        </button>
+                        <button className="btn btn-blue btn-sm" onClick={()=>handleSave(api.key)}>
+                          {saved[api.key]?'Saved!':'Save'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,color:'#0071e3'}} onClick={()=>cg.openUrl(api.link)}>Get Key</button>
+                      </>
+                  }
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Privacy Notice */}
+        <div className="privacy-notice">
+          <div className="privacy-icon">🔒</div>
+          <div className="privacy-text">
+            <strong>Your credentials never leave this device.</strong> All API keys are encrypted with AES-256-GCM using a key derived from your machine's unique hardware ID. The encrypted file is stored locally at <code style={{fontSize:11,background:'rgba(0,0,0,.05)',padding:'1px 5px',borderRadius:4}}>~/Library/Application Support/CyberGuard/credentials.enc</code>. Even if this file is copied to another machine, it cannot be decrypted.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [view,      setView]      = useState('overview');
+  const [loading,   setLoading]   = useState(true);
+  const [updateAvail, setUpdateAvail] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
+  const [stats,     setStats]     = useState({ cpu:0, ram:0, disk:0, netInKB:0, netOutKB:0, ramUsedGB:0, ramTotalGB:0, diskUsedGB:0, diskTotalGB:0, cpuModel:'' });
+  const [checks,    setChecks]    = useState([]);
+  const [devices,   setDevices]   = useState([]);
+  const [processes, setProcesses] = useState([]);
+  const [threats,   setThreats]   = useState([]);
+  const [feedItems, setFeedItems] = useState([]);
+  const [version,   setVersion]   = useState('1.0.0');
+
+  useEffect(() => {
+    cg.getVersion().then(setVersion);
+
+    Promise.all([
+      cg.getSystemStats(),
+      cg.getSecurityChecks(),
+      cg.getNetworkDevices(),
+      cg.getProcesses(),
+      cg.getFeeds(),
+    ]).then(([s, ch, dev, proc, fi]) => {
+      if (s)    setStats(s);
+      if (ch)   setChecks(ch);
+      if (dev)  setDevices(dev);
+      if (proc) setProcesses(proc);
+      if (fi)   setFeedItems(fi);
+      setLoading(false);
+    });
+
+    cg.onStatsUpdate(d => setStats(prev => ({ ...prev, ...d })));
+    cg.onThreatDetected(t => setThreats(prev => [t, ...prev].slice(0, 100)));
+    cg.onFeedsUpdated(items => setFeedItems(items));
+    cg.onUpdateAvailable(() => setUpdateAvail(true));
+    cg.onUpdateDownloaded(() => setUpdateReady(true));
+
+    return () => {
+      ['stats-update','threat-detected','feeds-updated','update-available','update-downloaded'].forEach(ch => cg.off(ch));
+    };
+  }, []);
+
+  const fails = checks.filter(c => c.status === 'fail').length;
+  const warns = checks.filter(c => c.status === 'warn').length;
+  let statusCls, statusLabel;
+  if (loading)     { statusCls='s-orange'; statusLabel='Loading…'; }
+  else if (fails)  { statusCls='s-red';    statusLabel='Action Required'; }
+  else if (warns)  { statusCls='s-orange'; statusLabel='Needs Attention'; }
+  else             { statusCls='s-green';  statusLabel='Protected'; }
+
+  if (loading) return (
+    <div className="app">
+      <div style={{width:220,background:'#1c1c1e'}} />
+      <div className="main"><div className="loading-screen"><div className="spinner" /><div>Running security checks…</div></div></div>
+    </div>
+  );
+
+  return (
+    <div className="app">
+      <Sidebar view={view} setView={setView} statusCls={statusCls} statusLabel={statusLabel} threatCount={threats.length} />
+      <div className="main">
+        {updateAvail && !updateReady && (
+          <div className="update-bar">
+            <span>🚀 A new version of CyberGuard is available</span>
+            <button onClick={()=>cg.checkForUpdates()}>Download Update</button>
+          </div>
+        )}
+        {updateReady && (
+          <div className="update-bar" style={{background:'#34c759'}}>
+            <span>✅ Update downloaded — restart to apply</span>
+            <button onClick={()=>cg.checkForUpdates()}>Restart Now</button>
+          </div>
+        )}
+        {view === 'overview'     && <OverviewPage    stats={stats} checks={checks} threats={threats} />}
+        {view === 'intelligence' && <IntelligencePage feedItems={feedItems} onRefresh={() => cg.refreshFeeds().then(setFeedItems)} />}
+        {view === 'network'      && <NetworkPage     devices={devices} stats={stats} onRefresh={() => cg.getNetworkDevices().then(setDevices)} />}
+        {view === 'security'     && <SecurityPage    checks={checks} onRefresh={() => cg.getSecurityChecks().then(setChecks)} />}
+        {view === 'processes'    && <ProcessesPage   processes={processes} onRefresh={() => cg.getProcesses().then(setProcesses)} />}
+        {view === 'threats'      && <ThreatsPage     threats={threats} />}
+        {view === 'settings'     && <SettingsPage    version={version} />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
