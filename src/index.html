@@ -20,12 +20,10 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
 
-  /* ── Layout ── */
   .app   { display: flex; height: 100vh; }
   .main  { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
   .page  { flex: 1; }
 
-  /* ── Sidebar ── */
   .sidebar { width: 220px; min-width: 220px; background: #1c1c1e; display: flex; flex-direction: column; -webkit-app-region: drag; }
   .sidebar * { -webkit-app-region: no-drag; }
   .sb-header { padding: 54px 20px 18px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -52,12 +50,10 @@
   .nav-badge { margin-left:auto; min-width:18px; height:18px; background:#ff3b30; color:#fff; border-radius:9px; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 5px; }
   .sb-footer { padding:14px 20px; border-top:1px solid rgba(255,255,255,.07); font-size:11px; color:#48484a; line-height:1.6; }
 
-  /* ── Update banner ── */
   .update-bar { background:#0071e3; color:#fff; padding:10px 40px; font-size:13px; display:flex; align-items:center; justify-content:space-between; }
   .update-bar button { background:rgba(255,255,255,.2); border:none; color:#fff; padding:5px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; font-family:inherit; }
   .update-bar button:hover { background:rgba(255,255,255,.3); }
 
-  /* ── Status banner ── */
   .banner { padding:34px 40px 30px; display:flex; align-items:center; justify-content:space-between; -webkit-app-region:drag; }
   .banner * { -webkit-app-region:no-drag; }
   .b-green  { background:linear-gradient(135deg,#0a5c2b,#1a9c48); }
@@ -69,7 +65,6 @@
   .score-num { font-size:24px; font-weight:700; line-height:1; }
   .score-lbl { font-size:10px; opacity:.75; margin-top:2px; font-weight:500; letter-spacing:.5px; }
 
-  /* ── Cards grid ── */
   .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; padding:20px 40px; }
   .card  { background:#fff; border-radius:14px; padding:18px 20px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04); }
   .card-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:12px; }
@@ -80,19 +75,16 @@
   .bar-fill { height:100%; border-radius:2px; transition:width .6s ease,background .3s; }
   .c-green{ background:#34c759; } .c-orange{ background:#ff9f0a; } .c-red{ background:#ff3b30; } .c-blue{ background:#0071e3; }
 
-  /* ── Page header ── */
   .ph { padding:28px 40px 20px; display:flex; align-items:flex-start; justify-content:space-between; -webkit-app-region:drag; }
   .ph * { -webkit-app-region:no-drag; }
   .ph h2 { font-size:22px; font-weight:700; color:#1d1d1f; letter-spacing:-.4px; }
   .ph p  { font-size:13px; color:#86868b; margin-top:3px; }
 
-  /* ── Section ── */
   .sec { padding:0 40px 28px; }
   .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
   .sec-title{ font-size:16px; font-weight:600; color:#1d1d1f; }
   .sec-sub  { font-size:12px; color:#86868b; margin-top:2px; }
 
-  /* ── Buttons ── */
   .btn { border:none; cursor:pointer; font-family:inherit; border-radius:8px; font-weight:500; transition:background .15s,transform .1s; display:inline-flex; align-items:center; gap:6px; }
   .btn:active { transform:scale(.97); }
   .btn-blue { background:#0071e3; color:#fff; padding:8px 16px; font-size:13px; }
@@ -103,7 +95,6 @@
   .btn-danger{ background:#fff0f0; color:#ff3b30; padding:6px 12px; font-size:12px; }
   .btn-danger:hover{ background:#ffe5e4; }
 
-  /* ── Threat feed ── */
   .feed-list { display:flex; flex-direction:column; gap:8px; }
   .feed-item { background:#fff; border-radius:10px; padding:11px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); animation:fadeIn .3s ease; }
   @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
@@ -124,8 +115,12 @@
   .badge-cisa    { background:#e8f0fe; color:#0071e3; }
   .badge-cybernews{ background:#f2e8fe; color:#7c3aed; }
   .badge-nvd     { background:#ffe8e8; color:#dc2626; }
+  .badge-malicious{ background:#ffe5e4; color:#cc1a1a; }
+  .badge-suspicious{ background:#fff3e0; color:#c47800; }
+  .badge-clean   { background:#e8fae8; color:#1a7a3c; }
+  .badge-unknown { background:#f2f2f7; color:#86868b; }
+  .badge-pending { background:#e8f0fe; color:#0071e3; }
 
-  /* ── Security checks ── */
   .checks-list { display:flex; flex-direction:column; gap:10px; }
   .check { background:#fff; border-radius:12px; padding:15px 18px; display:flex; align-items:center; gap:14px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .check-ico { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
@@ -143,7 +138,6 @@
   .cb-fail  { background:#ffe5e4; color:#cc1a1a; }
   .cb-unknown{ background:#f2f2f7; color:#86868b; }
 
-  /* ── Network ── */
   .net-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
   .stat-pill { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
   .sp-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
@@ -158,7 +152,6 @@
   .online   { display:flex; align-items:center; gap:5px; font-size:12px; color:#34c759; font-weight:500; }
   .online-dot{ width:6px; height:6px; border-radius:50%; background:#34c759; }
 
-  /* ── Processes ── */
   .proc-wrap{ background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
   .proc-table{ width:100%; border-collapse:collapse; }
   .proc-table th{ padding:10px 16px; text-align:left; font-size:11px; font-weight:600; color:#86868b; text-transform:uppercase; letter-spacing:.5px; background:#f9f9fb; border-bottom:1px solid #e8e8ed; }
@@ -172,7 +165,6 @@
   .pbar-fill { height:100%; border-radius:2px; background:#0071e3; transition:width .4s; }
   .sus-tag  { font-size:10px; background:#ffe5e4; color:#ff3b30; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:6px; }
 
-  /* ── Intelligence feed ── */
   .feed-tabs { display:flex; gap:6px; margin-bottom:16px; }
   .feed-tab  { padding:6px 14px; border-radius:20px; border:none; cursor:pointer; font-size:13px; font-family:inherit; font-weight:500; transition:background .15s,color .15s; background:transparent; color:#86868b; }
   .feed-tab:hover  { background:rgba(0,0,0,.05); color:#1d1d1f; }
@@ -186,7 +178,6 @@
   .intel-link { font-size:12px; color:#0071e3; cursor:pointer; text-decoration:none; font-weight:500; margin-left:auto; }
   .intel-link:hover { text-decoration:underline; }
 
-  /* ── Settings ── */
   .settings-section { background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:20px; }
   .settings-hdr { padding:16px 20px 14px; border-bottom:1px solid #f2f2f7; }
   .settings-hdr h3{ font-size:15px; font-weight:600; color:#1d1d1f; }
@@ -208,7 +199,31 @@
   .privacy-text { font-size:12px; color:#3a3a3c; line-height:1.6; }
   .privacy-text strong { color:#1d1d1f; }
 
-  /* ── Misc ── */
+  /* ── Scanner styles ── */
+  .scanner-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:0 40px 28px; }
+  .scanner-card { background:#fff; border-radius:14px; padding:22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .scanner-title{ font-size:16px; font-weight:700; color:#1d1d1f; margin-bottom:4px; }
+  .scanner-desc { font-size:12px; color:#86868b; margin-bottom:16px; line-height:1.5; }
+  .scan-input-row{ display:flex; gap:8px; margin-bottom:16px; }
+  .scan-input { flex:1; padding:9px 13px; border-radius:9px; border:1.5px solid #e0e0e6; font-size:13px; font-family:inherit; outline:none; transition:border .15s; background:#fff; }
+  .scan-input:focus{ border-color:#0071e3; }
+  .scan-result { border-radius:10px; padding:14px 16px; font-size:13px; animation:fadeIn .3s ease; }
+  .res-malicious { background:#fff0f0; border:1px solid #ffcdd2; }
+  .res-suspicious{ background:#fff8e8; border:1px solid #ffe0a0; }
+  .res-clean     { background:#f0faf0; border:1px solid #c8e6c9; }
+  .res-unknown   { background:#f2f2f7; border:1px solid #e0e0e6; }
+  .res-pending   { background:#e8f0fe; border:1px solid #bbdefb; }
+  .res-title { font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+  .res-body  { font-size:12px; color:#3a3a3c; line-height:1.6; }
+  .res-body code { font-family:monospace; background:rgba(0,0,0,.05); padding:1px 5px; border-radius:3px; font-size:11px; }
+  .res-detail-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .breach-item { background:#fff; border-radius:10px; padding:13px 16px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.06); border-left:3px solid #ff3b30; }
+  .breach-name { font-size:14px; font-weight:700; color:#1d1d1f; }
+  .breach-date { font-size:12px; color:#86868b; margin-bottom:6px; }
+  .breach-classes { display:flex; gap:4px; flex-wrap:wrap; }
+  .breach-class { font-size:10px; background:#f2f2f7; color:#3a3a3c; padding:2px 7px; border-radius:4px; font-weight:500; }
+  .port-suspicious{ color:#ff3b30; font-weight:600; }
+
   .empty { text-align:center; padding:40px; color:#aeaeb2; font-size:14px; }
   .empty-icon{ font-size:40px; margin-bottom:12px; }
   .spinner { width:24px; height:24px; border:3px solid #e8e8ed; border-top-color:#0071e3; border-radius:50%; animation:spin .8s linear infinite; }
@@ -233,7 +248,7 @@ function timeAgo(iso) {
 }
 function fillCls(pct) { return pct > 80 ? 'c-red' : pct > 60 ? 'c-orange' : 'c-green'; }
 function devIcon(h) {
-  const n = h.toLowerCase();
+  const n = (h||'').toLowerCase();
   if (/iphone|phone/.test(n)) return '📱';
   if (/ipad/.test(n))         return '📱';
   if (/mac|book/.test(n))     return '💻';
@@ -246,16 +261,18 @@ function devIcon(h) {
 }
 const ICONS = { firewall:'🔥', lock:'🔒', shield:'🛡', gatekeeper:'🚪', refresh:'🔄', screenlock:'🖥' };
 const APIS  = [
-  { key:'virustotal', name:'VirusTotal', desc:'File, URL, and IP scanning against 70+ AV engines', link:'https://www.virustotal.com/gui/my-apikey' },
-  { key:'abuseipdb',  name:'AbuseIPDB',  desc:'IP reputation and threat intelligence database',    link:'https://www.abuseipdb.com/account/api' },
-  { key:'shodan',     name:'Shodan',     desc:'Search engine for internet-connected devices',      link:'https://account.shodan.io/' },
-  { key:'hibp',       name:'Have I Been Pwned', desc:'Monitor email addresses for data breaches',  link:'https://haveibeenpwned.com/API/Key' },
+  { key:'virustotal', name:'VirusTotal',      desc:'File, URL & IP scanning — 70+ AV engines. Free tier: 500 req/day', link:'https://www.virustotal.com/gui/my-apikey' },
+  { key:'abuseipdb',  name:'AbuseIPDB',        desc:'IP reputation & threat intelligence database. Free tier: 1000 checks/day', link:'https://www.abuseipdb.com/account/api' },
+  { key:'hibp',       name:'Have I Been Pwned',desc:'Email breach monitoring. Requires paid API key (~$3.50/mo)', link:'https://haveibeenpwned.com/API/Key' },
+  { key:'safebrowsing',name:'Google Safe Browsing', desc:'URL phishing & malware detection. Free with Google Cloud account', link:'https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com' },
+  { key:'shodan',     name:'Shodan',           desc:'Search engine for internet-connected devices', link:'https://account.shodan.io/' },
 ];
 
-// ── Components ────────────────────────────────────────────────────────────────
+// ── Sidebar ───────────────────────────────────────────────────────────────────
 function Sidebar({ view, setView, statusCls, statusLabel, threatCount }) {
   const nav = [
     { id:'overview',     label:'Overview',       icon:'🛡' },
+    { id:'scanners',     label:'Scanners',       icon:'🔬' },
     { id:'intelligence', label:'Intelligence',   icon:'📡' },
     { id:'network',      label:'Network',        icon:'🌐' },
     { id:'security',     label:'Security',       icon:'✅' },
@@ -278,7 +295,7 @@ function Sidebar({ view, setView, statusCls, statusLabel, threatCount }) {
           </button>
         ))}
       </nav>
-      <div className="sb-footer">CyberGuard v1.0<br/><span style={{color:'#34c759'}}>●</span> Real-time monitoring</div>
+      <div className="sb-footer">CyberGuard v2.0<br/><span style={{color:'#34c759'}}>●</span> Real-time monitoring active</div>
     </div>
   );
 }
@@ -296,17 +313,61 @@ function StatCard({ label, value, unit, sub, barPct }) {
   );
 }
 
+// ── ScanResult helper ─────────────────────────────────────────────────────────
+function ScanResult({ result }) {
+  if (!result) return null;
+  if (result.error) return <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{result.error}</div></div>;
+  if (result.canceled) return null;
+
+  const v = result.verdict || 'unknown';
+  const cls = v === 'malicious' ? 'res-malicious' : v === 'suspicious' ? 'res-suspicious' : v === 'clean' ? 'res-clean' : v === 'pending' ? 'res-pending' : 'res-unknown';
+  const icon = v === 'malicious' ? '🚨' : v === 'suspicious' ? '⚠️' : v === 'clean' ? '✅' : v === 'pending' ? '⏳' : '❓';
+
+  return (
+    <div className={`scan-result ${cls}`}>
+      <div className="res-title">
+        {icon} <span className={`badge badge-${v}`}>{v.toUpperCase()}</span>
+        {result.fileName && <span style={{fontFamily:'monospace',fontSize:12,fontWeight:400}}>{result.fileName}</span>}
+      </div>
+      <div className="res-body">{result.summary}</div>
+      {result.results && result.results.length > 0 && (
+        <div className="res-detail-row">
+          {result.results.map((r,i) => (
+            <span key={i} style={{fontSize:11,background:'rgba(0,0,0,.06)',padding:'3px 8px',borderRadius:5}}>
+              {r.source}: <strong>{r.verdict}</strong>
+              {r.abuseScore !== undefined && ` (score: ${r.abuseScore})`}
+              {r.malicious  !== undefined && ` (${r.malicious}/${r.total} engines)`}
+            </span>
+          ))}
+        </div>
+      )}
+      {result.malicious !== undefined && result.total && (
+        <div style={{fontSize:11,marginTop:8,color:'#86868b'}}>
+          {result.malicious} malicious · {result.suspicious} suspicious · {result.harmless} harmless · {result.total} total engines
+        </div>
+      )}
+      {result.names && result.names.length > 0 && (
+        <details style={{marginTop:10}}>
+          <summary style={{fontSize:12,cursor:'pointer',color:'#0071e3'}}>AV detections ({result.names.length})</summary>
+          <div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
+            {result.names.map((n,i) => <span key={i} style={{fontSize:10,background:'#ffe5e4',color:'#cc1a1a',padding:'2px 6px',borderRadius:4}}>{n}</span>)}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // ── Overview ──────────────────────────────────────────────────────────────────
 function OverviewPage({ stats, checks, threats }) {
   const score = useMemo(()=>checks.length ? Math.round(checks.filter(c=>c.status==='pass').length/checks.length*100) : 0,[checks]);
   const fails  = checks.filter(c=>c.status==='fail').length;
   const warns  = checks.filter(c=>c.status==='warn').length;
   let bcls, btitle, bsub;
-  if (fails)       { bcls='b-red';    btitle=`${fails} Critical Issue${fails>1?'s':''}`; bsub='Immediate action required.'; }
-  else if (warns)  { bcls='b-orange'; btitle=`${warns} Warning${warns>1?'s':''} to Review`; bsub='Your Mac is mostly protected.'; }
+  if (fails)           { bcls='b-red';    btitle=`${fails} Critical Issue${fails>1?'s':''}`; bsub='Immediate action required.'; }
+  else if (warns)      { bcls='b-orange'; btitle=`${warns} Warning${warns>1?'s':''} to Review`; bsub='Your machine is mostly protected.'; }
   else if (!checks.length){ bcls='b-orange'; btitle='Running security checks…'; bsub=''; }
-  else             { bcls='b-green';  btitle='Your Mac is Protected'; bsub='All checks passing. Monitoring is active.'; }
-
+  else                 { bcls='b-green';  btitle='System is Protected'; bsub='All checks passing. Real-time monitoring is active.'; }
   return (
     <div className="page">
       <div className={`banner ${bcls}`}>
@@ -321,18 +382,17 @@ function OverviewPage({ stats, checks, threats }) {
       </div>
       <div className="sec">
         <div className="sec-hdr">
-          <div><div className="sec-title">Recent Threats</div><div className="sec-sub">{threats.length ? `${threats.length} events — all blocked` : 'No threats detected'}</div></div>
+          <div><div className="sec-title">Recent Threats</div><div className="sec-sub">{threats.length ? `${threats.length} events detected` : 'No threats detected'}</div></div>
         </div>
         {threats.length === 0
           ? <div className="empty"><div className="empty-icon">✅</div>No threats detected — system is clean</div>
           : <div className="feed-list">
               {threats.slice(0,8).map(t=>(
                 <div key={t.id} className="feed-item">
-                  <div className={`feed-dot d-${t.severity.toLowerCase()}`} />
-                  <div className="feed-type">{t.type}</div>
+                  <div className={`feed-dot d-${(t.severity||'').toLowerCase()}`} />
+                  <div style={{flex:1}}><div className="feed-type">{t.type}</div>{t.detail && <div style={{fontSize:11,color:'#86868b',marginTop:2}}>{t.detail}</div>}</div>
                   <div className="feed-src">{t.source}</div>
-                  <span className={`badge badge-${t.severity.toLowerCase()}`}>{t.severity}</span>
-                  {t.blocked && <span className="badge badge-blocked">Blocked</span>}
+                  <span className={`badge badge-${(t.severity||'').toLowerCase()}`}>{t.severity}</span>
                   <div className="feed-time">{timeAgo(t.timestamp)}</div>
                 </div>
               ))}
@@ -343,23 +403,180 @@ function OverviewPage({ stats, checks, threats }) {
   );
 }
 
+// ── Scanners ──────────────────────────────────────────────────────────────────
+function ScannersPage() {
+  // IP scanner
+  const [ipInput, setIpInput]   = useState('');
+  const [ipRes,   setIpRes]     = useState(null);
+  const [ipBusy,  setIpBusy]   = useState(false);
+  const scanIP = async () => {
+    if (!ipInput.trim()) return;
+    setIpBusy(true); setIpRes(null);
+    setIpRes(await cg.scanIP(ipInput.trim()));
+    setIpBusy(false);
+  };
+
+  // URL scanner
+  const [urlInput, setUrlInput] = useState('');
+  const [urlRes,   setUrlRes]   = useState(null);
+  const [urlBusy,  setUrlBusy] = useState(false);
+  const scanURL = async () => {
+    if (!urlInput.trim()) return;
+    setUrlBusy(true); setUrlRes(null);
+    setUrlRes(await cg.scanURL(urlInput.trim()));
+    setUrlBusy(false);
+  };
+
+  // File scanner
+  const [fileRes,  setFileRes]  = useState(null);
+  const [fileBusy, setFileBusy] = useState(false);
+  const scanFile = async () => {
+    setFileBusy(true); setFileRes(null);
+    setFileRes(await cg.scanFile());
+    setFileBusy(false);
+  };
+
+  // Email breach
+  const [emailInput, setEmailInput] = useState('');
+  const [emailRes,   setEmailRes]   = useState(null);
+  const [emailBusy,  setEmailBusy] = useState(false);
+  const checkEmail = async () => {
+    if (!emailInput.trim()) return;
+    setEmailBusy(true); setEmailRes(null);
+    setEmailRes(await cg.checkEmailBreach(emailInput.trim()));
+    setEmailBusy(false);
+  };
+
+  // Password breach (k-anonymity — no key needed)
+  const [passInput, setPassInput] = useState('');
+  const [passRes,   setPassRes]   = useState(null);
+  const [passBusy,  setPassBusy] = useState(false);
+  const checkPass = async () => {
+    if (!passInput.trim()) return;
+    setPassBusy(true); setPassRes(null);
+    const r = await cg.checkPasswordBreach(passInput);
+    setPassRes(r);
+    setPassBusy(false);
+  };
+
+  return (
+    <div className="page">
+      <div className="ph">
+        <div>
+          <h2>Scanners</h2>
+          <p>Real threat lookups using live security APIs — no simulated results</p>
+        </div>
+      </div>
+      <div className="scanner-grid">
+
+        {/* IP Reputation */}
+        <div className="scanner-card">
+          <div className="scanner-title">🔍 IP Reputation</div>
+          <div className="scanner-desc">Check any IP address against AbuseIPDB and VirusTotal. Requires API keys in Settings.</div>
+          <div className="scan-input-row">
+            <input className="scan-input" placeholder="Enter IP address (e.g. 192.168.1.1)" value={ipInput}
+              onChange={e=>setIpInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&scanIP()} />
+            <button className="btn btn-blue btn-sm" onClick={scanIP} disabled={ipBusy}>{ipBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Scan'}</button>
+          </div>
+          <ScanResult result={ipRes} />
+        </div>
+
+        {/* URL / Domain */}
+        <div className="scanner-card">
+          <div className="scanner-title">🌐 URL / Domain Check</div>
+          <div className="scanner-desc">Check URLs for phishing, malware and C2 using VirusTotal, Google Safe Browsing and URLhaus (free, no key required).</div>
+          <div className="scan-input-row">
+            <input className="scan-input" placeholder="Enter URL or domain" value={urlInput}
+              onChange={e=>setUrlInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&scanURL()} />
+            <button className="btn btn-blue btn-sm" onClick={scanURL} disabled={urlBusy}>{urlBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
+          </div>
+          <ScanResult result={urlRes} />
+        </div>
+
+        {/* File scanner */}
+        <div className="scanner-card">
+          <div className="scanner-title">📁 File Scanner</div>
+          <div className="scanner-desc">
+            Calculates a SHA-256 hash of any file and queries VirusTotal — <strong>no file data leaves your machine</strong>. Requires VirusTotal API key.
+          </div>
+          <div className="scan-input-row">
+            <button className="btn btn-blue" onClick={scanFile} disabled={fileBusy} style={{flex:1}}>
+              {fileBusy ? <><span className="spinner" style={{width:14,height:14,borderWidth:2}} /> Scanning…</> : '📂 Choose File to Scan'}
+            </button>
+          </div>
+          <ScanResult result={fileRes} />
+        </div>
+
+        {/* Email breach */}
+        <div className="scanner-card">
+          <div className="scanner-title">📧 Email Breach Check</div>
+          <div className="scanner-desc">Check if an email address appears in any known data breach using Have I Been Pwned. Requires HIBP API key (~$3.50/mo).</div>
+          <div className="scan-input-row">
+            <input className="scan-input" type="email" placeholder="you@example.com" value={emailInput}
+              onChange={e=>setEmailInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&checkEmail()} />
+            <button className="btn btn-blue btn-sm" onClick={checkEmail} disabled={emailBusy}>{emailBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
+          </div>
+          {emailRes && !emailRes.error && emailRes.breached && (
+            <div className="scan-result res-malicious" style={{marginBottom:12}}>
+              <div className="res-title">🚨 Found in {emailRes.breachCount} breach{emailRes.breachCount!==1?'es':''}</div>
+              <div className="res-body">{emailRes.summary}</div>
+            </div>
+          )}
+          {emailRes && !emailRes.error && !emailRes.breached && (
+            <div className="scan-result res-clean"><div className="res-title">✅ Not found in any breach</div><div className="res-body">{emailRes.summary}</div></div>
+          )}
+          {emailRes && emailRes.error && <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{emailRes.error}</div></div>}
+          {emailRes && emailRes.breached && emailRes.breaches && emailRes.breaches.length > 0 && (
+            <div style={{marginTop:10}}>
+              {emailRes.breaches.slice(0,5).map((b,i)=>(
+                <div key={i} className="breach-item">
+                  <div className="breach-name">{b.name}</div>
+                  <div className="breach-date">{b.breachDate} · {b.domain}</div>
+                  <div className="breach-classes">{b.dataClasses.slice(0,6).map((dc,j)=><span key={j} className="breach-class">{dc}</span>)}</div>
+                </div>
+              ))}
+              {emailRes.breaches.length > 5 && <div style={{fontSize:12,color:'#86868b',padding:'8px 0'}}>+{emailRes.breaches.length-5} more breaches…</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Password breach - spans full width */}
+        <div className="scanner-card" style={{gridColumn:'1/-1'}}>
+          <div className="scanner-title">🔑 Password Breach Check</div>
+          <div className="scanner-desc">
+            Check if a password has appeared in data breaches using Have I Been Pwned's k-anonymity API — <strong>no API key required, your password never leaves this device</strong>. Only the first 5 characters of the SHA-1 hash are sent.
+          </div>
+          <div className="scan-input-row">
+            <input className="scan-input" type="password" placeholder="Enter password to check" value={passInput}
+              onChange={e=>setPassInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&checkPass()} />
+            <button className="btn btn-blue btn-sm" onClick={checkPass} disabled={passBusy}>{passBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
+          </div>
+          {passRes && !passRes.error && (
+            <div className={`scan-result ${passRes.pwned ? 'res-malicious' : 'res-clean'}`}>
+              <div className="res-title">{passRes.pwned ? '🚨 Password Compromised' : '✅ Password Not Found'}</div>
+              <div className="res-body">{passRes.summary}</div>
+            </div>
+          )}
+          {passRes && passRes.error && <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{passRes.error}</div></div>}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ── Intelligence ──────────────────────────────────────────────────────────────
 function IntelligencePage({ feedItems, onRefresh }) {
   const [tab, setTab]         = useState('all');
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
-
   const refresh = async () => { setLoading(true); await onRefresh(); setLastUpdate(new Date()); setLoading(false); };
-
   useEffect(() => { if (feedItems.length === 0) refresh(); }, []);
-
-  const filtered = tab === 'all' ? feedItems : feedItems.filter(i => i.source.toLowerCase() === tab);
-
+  const filtered = tab === 'all' ? feedItems : feedItems.filter(i => i.source.toLowerCase() === tab.toLowerCase());
   const srcBadge = s => {
     const cls = s === 'CISA' ? 'badge-cisa' : s === 'CyberNews' ? 'badge-cybernews' : 'badge-nvd';
     return <span className={`badge ${cls}`}>{s}</span>;
   };
-
   return (
     <div className="page">
       <div className="ph">
@@ -375,9 +592,7 @@ function IntelligencePage({ feedItems, onRefresh }) {
           ))}
         </div>
         {loading && <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>}
-        {!loading && filtered.length === 0 && (
-          <div className="empty"><div className="empty-icon">📡</div>No intelligence items — click Refresh to fetch feeds</div>
-        )}
+        {!loading && filtered.length === 0 && <div className="empty"><div className="empty-icon">📡</div>No items — click Refresh to fetch feeds</div>}
         {!loading && filtered.map((item,i) => (
           <div key={item.id||i} className="intel-item">
             <div className="intel-hdr">
@@ -399,13 +614,14 @@ function IntelligencePage({ feedItems, onRefresh }) {
 }
 
 // ── Network ───────────────────────────────────────────────────────────────────
-function NetworkPage({ devices, stats, onRefresh }) {
+function NetworkPage({ devices, stats, connections, ports, onRefresh }) {
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState('devices');
   const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
   return (
     <div className="page">
       <div className="ph">
-        <div><h2>Network</h2><p>Devices on your local network</p></div>
+        <div><h2>Network</h2><p>Devices, live connections and open ports</p></div>
         <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'} Refresh</button>
       </div>
       <div className="sec" style={{paddingTop:0}}>
@@ -414,7 +630,13 @@ function NetworkPage({ devices, stats, onRefresh }) {
           <div className="stat-pill"><div className="sp-lbl">Network In</div><div className="sp-val">{stats.netInKB}<span className="sp-unit"> KB/s</span></div></div>
           <div className="stat-pill"><div className="sp-lbl">Network Out</div><div className="sp-val">{stats.netOutKB}<span className="sp-unit"> KB/s</span></div></div>
         </div>
-        {devices.length === 0
+        <div className="feed-tabs">
+          <button className={`feed-tab ${tab==='devices'?'active':''}`} onClick={()=>setTab('devices')}>Devices ({devices.length})</button>
+          <button className={`feed-tab ${tab==='connections'?'active':''}`} onClick={()=>setTab('connections')}>Live Connections ({connections.length})</button>
+          <button className={`feed-tab ${tab==='ports'?'active':''}`} onClick={()=>setTab('ports')}>Open Ports ({ports.length})</button>
+        </div>
+
+        {tab === 'devices' && (devices.length === 0
           ? <div className="empty"><div className="empty-icon">🌐</div>No devices found — try Refresh</div>
           : <div className="devices-list">
               {devices.map((d,i)=>(
@@ -425,7 +647,50 @@ function NetworkPage({ devices, stats, onRefresh }) {
                 </div>
               ))}
             </div>
-        }
+        )}
+
+        {tab === 'connections' && (connections.length === 0
+          ? <div className="empty"><div className="empty-icon">🔌</div>No established connections detected</div>
+          : <div className="proc-wrap">
+              <table className="proc-table">
+                <thead><tr><th>Process</th><th>PID</th><th>Source</th><th>Destination</th><th>Port</th></tr></thead>
+                <tbody>
+                  {connections.slice(0,50).map((c,i)=>(
+                    <tr key={i}>
+                      <td style={{fontWeight:500}}>{c.process}</td>
+                      <td style={{fontSize:12,color:'#86868b',fontFamily:'monospace'}}>{c.pid}</td>
+                      <td style={{fontSize:12,fontFamily:'monospace',color:'#86868b'}}>{c.srcIp}</td>
+                      <td style={{fontSize:12,fontFamily:'monospace'}}>{c.dstIp}</td>
+                      <td style={{fontSize:12,fontFamily:'monospace'}}>{c.dstPort}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        )}
+
+        {tab === 'ports' && (ports.length === 0
+          ? <div className="empty"><div className="empty-icon">🔒</div>No listening ports detected</div>
+          : <div className="proc-wrap">
+              <table className="proc-table">
+                <thead><tr><th>Process</th><th>PID</th><th>Protocol</th><th>Address</th><th>Port</th></tr></thead>
+                <tbody>
+                  {ports.map((p,i)=>{
+                    const sus = [31337,1337,4444,4445,5555,6666,6667,6668,6669,9001,9030,1080,2323,7547].includes(p.port);
+                    return (
+                      <tr key={i} className={sus?'proc-sus':''}>
+                        <td style={{fontWeight:500}}>{p.process}{sus&&<span className="sus-tag">SUSPICIOUS</span>}</td>
+                        <td style={{fontSize:12,color:'#86868b',fontFamily:'monospace'}}>{p.pid}</td>
+                        <td style={{fontSize:12,color:'#86868b'}}>{p.proto}</td>
+                        <td style={{fontSize:12,fontFamily:'monospace',color:'#86868b'}}>{p.addr}</td>
+                        <td style={{fontSize:12,fontFamily:'monospace'}} className={sus?'port-suspicious':''}>{p.port}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+        )}
       </div>
     </div>
   );
@@ -511,17 +776,20 @@ function ProcessesPage({ processes, onRefresh }) {
 function ThreatsPage({ threats }) {
   return (
     <div className="page">
-      <div className="ph"><div><h2>Threats</h2><p>{threats.length === 0 ? 'No threats recorded' : `${threats.length} events — all blocked`}</p></div></div>
+      <div className="ph"><div><h2>Threats</h2><p>{threats.length === 0 ? 'No threats recorded' : `${threats.length} events detected by real-time monitors`}</p></div></div>
       <div className="sec" style={{paddingTop:0}}>
         {threats.length === 0
-          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected</div>
+          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected — monitors are running</div>
           : <div className="feed-list">
               {threats.map(t=>(
                 <div key={t.id} className="feed-item">
-                  <div className={`feed-dot d-${t.severity.toLowerCase()}`} />
-                  <div style={{flex:1}}><div className="feed-type">{t.type}</div><div style={{fontSize:12,color:'#86868b',marginTop:2}}>Source: <span style={{fontFamily:'monospace'}}>{t.source}</span></div></div>
-                  <span className={`badge badge-${t.severity.toLowerCase()}`}>{t.severity}</span>
-                  {t.blocked && <span className="badge badge-blocked">Blocked</span>}
+                  <div className={`feed-dot d-${(t.severity||'').toLowerCase()}`} />
+                  <div style={{flex:1}}>
+                    <div className="feed-type">{t.type}</div>
+                    {t.detail && <div style={{fontSize:12,color:'#86868b',marginTop:2}}>{t.detail}</div>}
+                    <div style={{fontSize:11,color:'#aeaeb2',marginTop:2}}>Source: <span style={{fontFamily:'monospace'}}>{t.source}</span></div>
+                  </div>
+                  <span className={`badge badge-${(t.severity||'').toLowerCase()}`}>{t.severity}</span>
                   <div className="feed-time">{timeAgo(t.timestamp)}</div>
                 </div>
               ))}
@@ -534,48 +802,35 @@ function ThreatsPage({ threats }) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function SettingsPage({ version }) {
-  const [creds,    setCreds]    = useState({});
-  const [inputs,   setInputs]   = useState({});
-  const [show,     setShow]     = useState({});
-  const [testing,  setTesting]  = useState({});
-  const [results,  setResults]  = useState({});
-  const [saved,    setSaved]    = useState({});
-
+  const [creds,   setCreds]   = useState({});
+  const [inputs,  setInputs]  = useState({});
+  const [show,    setShow]    = useState({});
+  const [testing, setTesting] = useState({});
+  const [results, setResults] = useState({});
+  const [saved,   setSaved]   = useState({});
   useEffect(() => { cg.credGetMasked().then(setCreds); }, []);
-
   const handleSave = async (key) => {
-    const val = inputs[key];
-    if (!val) return;
+    const val = inputs[key]; if (!val) return;
     await cg.credSet(key, val);
     setInputs(p => ({ ...p, [key]: '' }));
     setSaved(p => ({ ...p, [key]: true }));
     setTimeout(() => setSaved(p => ({ ...p, [key]: false })), 2000);
     cg.credGetMasked().then(setCreds);
   };
-
-  const handleDelete = async (key) => {
-    await cg.credDelete(key);
-    setResults(p => ({ ...p, [key]: null }));
-    cg.credGetMasked().then(setCreds);
+  const handleDelete = async (key) => { await cg.credDelete(key); setResults(p=>({...p,[key]:null})); cg.credGetMasked().then(setCreds); };
+  const handleTest   = async (key) => {
+    setTesting(p=>({...p,[key]:true}));
+    setResults(p=>({...p,[key]:await cg.credTest(key)}));
+    setTesting(p=>({...p,[key]:false}));
   };
-
-  const handleTest = async (key) => {
-    setTesting(p => ({ ...p, [key]: true }));
-    const r = await cg.credTest(key);
-    setResults(p => ({ ...p, [key]: r }));
-    setTesting(p => ({ ...p, [key]: false }));
-  };
-
   return (
     <div className="page">
-      <div className="ph"><div><h2>Settings</h2><p>App configuration and API integrations</p></div></div>
+      <div className="ph"><div><h2>Settings</h2><p>API keys and app configuration</p></div></div>
       <div className="sec" style={{paddingTop:0}}>
-
-        {/* About */}
         <div className="settings-section">
           <div className="settings-hdr"><h3>About</h3></div>
           <div className="setting-row">
-            <div className="setting-info"><div className="setting-name">Version</div><div className="setting-desc">CyberGuard v{version}</div></div>
+            <div className="setting-info"><div className="setting-name">Version</div><div className="setting-desc">CyberGuard v{version} — real monitoring active</div></div>
             <button className="btn btn-ghost btn-sm" onClick={()=>cg.checkForUpdates()}>Check for Updates</button>
           </div>
           <div className="setting-row">
@@ -587,66 +842,50 @@ function SettingsPage({ version }) {
             <button className="btn btn-ghost btn-sm" onClick={()=>cg.openUrl('https://github.com/TushaeBXN/cyberguard/issues')}>Open Issues</button>
           </div>
         </div>
-
-        {/* API Integrations */}
         <div className="settings-section">
           <div className="settings-hdr">
             <h3>API Integrations</h3>
-            <p>Connect external security services to power real-time threat analysis</p>
+            <p>Keys are stored encrypted on your device. Connect services to power the Scanners page.</p>
           </div>
           {APIS.map(api => {
-            const hasCred   = !!creds[api.key];
-            const testRes   = results[api.key];
+            const hasCred = !!creds[api.key];
+            const testRes = results[api.key];
             const isTesting = testing[api.key];
             return (
               <div key={api.key} className="setting-row" style={{flexWrap:'wrap',gap:12}}>
                 <div className="setting-info" style={{minWidth:200}}>
                   <div className="setting-name" style={{display:'flex',alignItems:'center',gap:8}}>
                     {api.name}
-                    <div className={`conn-dot ${hasCred ? (testRes?.ok ? 'conn-ok' : 'conn-none') : 'conn-none'}`} title={hasCred ? 'Key saved' : 'Not configured'} />
+                    <div className={`conn-dot ${hasCred ? (testRes?.ok ? 'conn-ok' : 'conn-none') : 'conn-none'}`} title={hasCred?'Key saved':'Not configured'} />
                   </div>
                   <div className="setting-desc">{api.desc}</div>
                   {testRes && <div style={{fontSize:11,marginTop:4,color:testRes.ok?'#34c759':'#ff3b30'}}>{testRes.ok?'✓':''} {testRes.msg}</div>}
                 </div>
                 <div className="api-input-wrap">
-                  {hasCred
-                    ? <>
-                        <span style={{fontSize:13,color:'#86868b',fontFamily:'monospace'}}>{creds[api.key]}</span>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>handleTest(api.key)} disabled={isTesting}>{isTesting?'…':'Test'}</button>
-                        <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(api.key)}>Remove</button>
-                      </>
-                    : <>
-                        <input
-                          className="api-input"
-                          type={show[api.key]?'text':'password'}
-                          placeholder={`Enter ${api.name} API key`}
-                          value={inputs[api.key]||''}
-                          onChange={e=>setInputs(p=>({...p,[api.key]:e.target.value}))}
-                          onKeyDown={e=>e.key==='Enter'&&handleSave(api.key)}
-                        />
-                        <button className="btn btn-ghost btn-sm" onClick={()=>setShow(p=>({...p,[api.key]:!p[api.key]}))}>
-                          {show[api.key]?'Hide':'Show'}
-                        </button>
-                        <button className="btn btn-blue btn-sm" onClick={()=>handleSave(api.key)}>
-                          {saved[api.key]?'Saved!':'Save'}
-                        </button>
-                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,color:'#0071e3'}} onClick={()=>cg.openUrl(api.link)}>Get Key</button>
-                      </>
-                  }
+                  {hasCred ? <>
+                    <span style={{fontSize:13,color:'#86868b',fontFamily:'monospace'}}>{creds[api.key]}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>handleTest(api.key)} disabled={isTesting}>{isTesting?'…':'Test'}</button>
+                    <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(api.key)}>Remove</button>
+                  </> : <>
+                    <input className="api-input" type={show[api.key]?'text':'password'} placeholder={`Enter ${api.name} API key`}
+                      value={inputs[api.key]||''} onChange={e=>setInputs(p=>({...p,[api.key]:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&handleSave(api.key)} />
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setShow(p=>({...p,[api.key]:!p[api.key]}))}>
+                      {show[api.key]?'Hide':'Show'}
+                    </button>
+                    <button className="btn btn-blue btn-sm" onClick={()=>handleSave(api.key)}>{saved[api.key]?'Saved!':'Save'}</button>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:11,color:'#0071e3'}} onClick={()=>cg.openUrl(api.link)}>Get Key</button>
+                  </>}
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Privacy Notice */}
         <div className="privacy-notice">
           <div className="privacy-icon">🔒</div>
           <div className="privacy-text">
-            <strong>Your credentials never leave this device.</strong> All API keys are encrypted with AES-256-GCM using a key derived from your machine's unique hardware ID. The encrypted file is stored locally at <code style={{fontSize:11,background:'rgba(0,0,0,.05)',padding:'1px 5px',borderRadius:4}}>~/Library/Application Support/CyberGuard/credentials.enc</code>. Even if this file is copied to another machine, it cannot be decrypted.
+            <strong>Your credentials never leave this device.</strong> All API keys are encrypted with AES-256-GCM using a key derived from your machine's unique hardware ID. The encrypted file is stored locally — even if copied to another machine, it cannot be decrypted. Password breach checks use k-anonymity — your password hash is never transmitted in full.
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -654,54 +893,62 @@ function SettingsPage({ version }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 function App() {
-  const [view,      setView]      = useState('overview');
-  const [loading,   setLoading]   = useState(true);
+  const [view,        setView]        = useState('overview');
+  const [loading,     setLoading]     = useState(true);
   const [updateAvail, setUpdateAvail] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
-  const [stats,     setStats]     = useState({ cpu:0, ram:0, disk:0, netInKB:0, netOutKB:0, ramUsedGB:0, ramTotalGB:0, diskUsedGB:0, diskTotalGB:0, cpuModel:'' });
-  const [checks,    setChecks]    = useState([]);
-  const [devices,   setDevices]   = useState([]);
-  const [processes, setProcesses] = useState([]);
-  const [threats,   setThreats]   = useState([]);
-  const [feedItems, setFeedItems] = useState([]);
-  const [version,   setVersion]   = useState('1.0.0');
+  const [stats,       setStats]       = useState({ cpu:0, ram:0, disk:0, netInKB:0, netOutKB:0, ramUsedGB:0, ramTotalGB:0, diskUsedGB:0, diskTotalGB:0, cpuModel:'' });
+  const [checks,      setChecks]      = useState([]);
+  const [devices,     setDevices]     = useState([]);
+  const [processes,   setProcesses]   = useState([]);
+  const [threats,     setThreats]     = useState([]);
+  const [feedItems,   setFeedItems]   = useState([]);
+  const [connections, setConnections] = useState([]);
+  const [ports,       setPorts]       = useState([]);
+  const [version,     setVersion]     = useState('2.0.0');
 
   useEffect(() => {
     cg.getVersion().then(setVersion);
-
     Promise.all([
       cg.getSystemStats(),
       cg.getSecurityChecks(),
       cg.getNetworkDevices(),
       cg.getProcesses(),
       cg.getFeeds(),
-    ]).then(([s, ch, dev, proc, fi]) => {
-      if (s)    setStats(s);
-      if (ch)   setChecks(ch);
-      if (dev)  setDevices(dev);
-      if (proc) setProcesses(proc);
-      if (fi)   setFeedItems(fi);
+      cg.getConnections(),
+      cg.getPorts(),
+    ]).then(([s, ch, dev, proc, fi, conns, ps]) => {
+      if (s)     setStats(s);
+      if (ch)    setChecks(ch);
+      if (dev)   setDevices(dev);
+      if (proc)  setProcesses(proc);
+      if (fi)    setFeedItems(fi);
+      if (conns) setConnections(conns);
+      if (ps)    setPorts(ps);
       setLoading(false);
     });
 
-    cg.onStatsUpdate(d => setStats(prev => ({ ...prev, ...d })));
-    cg.onThreatDetected(t => setThreats(prev => [t, ...prev].slice(0, 100)));
-    cg.onFeedsUpdated(items => setFeedItems(items));
-    cg.onUpdateAvailable(() => setUpdateAvail(true));
+    cg.onStatsUpdate(d       => setStats(prev => ({ ...prev, ...d })));
+    cg.onThreatDetected(t    => setThreats(prev => [t, ...prev].slice(0, 200)));
+    cg.onFeedsUpdated(items  => setFeedItems(items));
+    cg.onConnectionsUpdate(c => setConnections(c));
+    cg.onPortsUpdate(p       => setPorts(p));
+    cg.onUpdateAvailable(()  => setUpdateAvail(true));
     cg.onUpdateDownloaded(() => setUpdateReady(true));
 
     return () => {
-      ['stats-update','threat-detected','feeds-updated','update-available','update-downloaded'].forEach(ch => cg.off(ch));
+      ['stats-update','threat-detected','feeds-updated','connections-update','ports-update','update-available','update-downloaded']
+        .forEach(ch => cg.off(ch));
     };
   }, []);
 
   const fails = checks.filter(c => c.status === 'fail').length;
   const warns = checks.filter(c => c.status === 'warn').length;
   let statusCls, statusLabel;
-  if (loading)     { statusCls='s-orange'; statusLabel='Loading…'; }
-  else if (fails)  { statusCls='s-red';    statusLabel='Action Required'; }
-  else if (warns)  { statusCls='s-orange'; statusLabel='Needs Attention'; }
-  else             { statusCls='s-green';  statusLabel='Protected'; }
+  if (loading)    { statusCls='s-orange'; statusLabel='Loading…'; }
+  else if (fails) { statusCls='s-red';    statusLabel='Action Required'; }
+  else if (warns) { statusCls='s-orange'; statusLabel='Needs Attention'; }
+  else            { statusCls='s-green';  statusLabel='Protected'; }
 
   if (loading) return (
     <div className="app">
@@ -715,24 +962,19 @@ function App() {
       <Sidebar view={view} setView={setView} statusCls={statusCls} statusLabel={statusLabel} threatCount={threats.length} />
       <div className="main">
         {updateAvail && !updateReady && (
-          <div className="update-bar">
-            <span>🚀 A new version of CyberGuard is available</span>
-            <button onClick={()=>cg.checkForUpdates()}>Download Update</button>
-          </div>
+          <div className="update-bar"><span>🚀 A new version of CyberGuard is available</span><button onClick={()=>cg.checkForUpdates()}>Download Update</button></div>
         )}
         {updateReady && (
-          <div className="update-bar" style={{background:'#34c759'}}>
-            <span>✅ Update downloaded — restart to apply</span>
-            <button onClick={()=>cg.checkForUpdates()}>Restart Now</button>
-          </div>
+          <div className="update-bar" style={{background:'#34c759'}}><span>✅ Update downloaded — restart to apply</span><button onClick={()=>cg.checkForUpdates()}>Restart Now</button></div>
         )}
-        {view === 'overview'     && <OverviewPage    stats={stats} checks={checks} threats={threats} />}
+        {view === 'overview'     && <OverviewPage     stats={stats} checks={checks} threats={threats} />}
+        {view === 'scanners'     && <ScannersPage />}
         {view === 'intelligence' && <IntelligencePage feedItems={feedItems} onRefresh={() => cg.refreshFeeds().then(setFeedItems)} />}
-        {view === 'network'      && <NetworkPage     devices={devices} stats={stats} onRefresh={() => cg.getNetworkDevices().then(setDevices)} />}
-        {view === 'security'     && <SecurityPage    checks={checks} onRefresh={() => cg.getSecurityChecks().then(setChecks)} />}
-        {view === 'processes'    && <ProcessesPage   processes={processes} onRefresh={() => cg.getProcesses().then(setProcesses)} />}
-        {view === 'threats'      && <ThreatsPage     threats={threats} />}
-        {view === 'settings'     && <SettingsPage    version={version} />}
+        {view === 'network'      && <NetworkPage      devices={devices} stats={stats} connections={connections} ports={ports} onRefresh={async()=>{ const [d,c,p]=await Promise.all([cg.getNetworkDevices(),cg.getConnections(),cg.getPorts()]); setDevices(d); setConnections(c); setPorts(p); }} />}
+        {view === 'security'     && <SecurityPage     checks={checks} onRefresh={() => cg.getSecurityChecks().then(setChecks)} />}
+        {view === 'processes'    && <ProcessesPage    processes={processes} onRefresh={() => cg.getProcesses().then(setProcesses)} />}
+        {view === 'threats'      && <ThreatsPage      threats={threats} />}
+        {view === 'settings'     && <SettingsPage     version={version} />}
       </div>
     </div>
   );

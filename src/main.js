@@ -1,16 +1,33 @@
-const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
+'use strict';
+
+const { app, BrowserWindow, ipcMain, Menu, shell, dialog } = require('electron');
 const { execSync } = require('child_process');
-const path  = require('path');
-const si    = require('systeminformation');
-const store = require('./store');
-const feeds = require('./feeds');
+const path    = require('path');
+const si      = require('systeminformation');
+const store   = require('./store');
+const feeds   = require('./feeds');
+
+// Real monitors
+const connMonitor = require('./monitors/connections');
+const authMonitor = require('./monitors/auth');
+const portMonitor = require('./monitors/ports');
+
+// Real scanners
+const ipScanner   = require('./scanners/ip-reputation');
+const fileScanner = require('./scanners/file-scan');
+const breachCheck = require('./scanners/breach-check');
+const urlCheck    = require('./scanners/url-check');
 
 let mainWindow;
 let statsInterval;
-let threatInterval;
+let monitorInterval;
 let feedRefreshInterval;
 let threatCount = 0;
 let cachedFeeds = [];
+
+// Dedup: don't flood the same threat within a short window
+const recentThreatKeys = new Map(); // key → expiry timestamp
+const THREAT_DEDUP_MS  = 5 * 60 * 1000; // 5 minutes
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +67,7 @@ function createWindow() {
 // ── Monitoring ────────────────────────────────────────────────────────────────
 
 function startMonitoring() {
-  // Live stats every 2 s
+  // Live system stats every 2 s
   statsInterval = setInterval(async () => {
     try {
       const [load, mem, nets] = await Promise.all([
@@ -71,10 +88,9 @@ function startMonitoring() {
     } catch (_) {}
   }, 2000);
 
-  // Simulated threat events (v2 will plug in real IDS)
-  threatInterval = setInterval(() => {
-    if (Math.random() < 0.12) emitSimulatedThreat();
-  }, 10000);
+  // Real threat detection every 30 s
+  monitorInterval = setInterval(runMonitors, 30_000);
+  runMonitors(); // also run immediately on start
 
   // Refresh intelligence feeds every 30 min
   feedRefreshInterval = setInterval(refreshFeeds, 30 * 60 * 1000);
@@ -82,9 +98,57 @@ function startMonitoring() {
 
 function stopMonitoring() {
   clearInterval(statsInterval);
-  clearInterval(threatInterval);
+  clearInterval(monitorInterval);
   clearInterval(feedRefreshInterval);
 }
+
+// ── Real threat monitors ──────────────────────────────────────────────────────
+
+async function runMonitors() {
+  const [connResult, authResult, portResult] = await Promise.all([
+    Promise.resolve().then(() => connMonitor.snapshot()),
+    Promise.resolve().then(() => authMonitor.snapshot()),
+    Promise.resolve().then(() => portMonitor.snapshot()),
+  ]);
+
+  // Push live data to UI
+  if (connResult.connections.length > 0) {
+    mainWindow?.webContents.send('connections-update', connResult.connections);
+  }
+  mainWindow?.webContents.send('ports-update', portResult.ports);
+
+  // Emit deduplicated threat events
+  const allThreats = [
+    ...connResult.threats,
+    ...authResult.threats,
+    ...portResult.threats,
+  ];
+
+  const now = Date.now();
+  for (const [k, exp] of recentThreatKeys) {
+    if (now > exp) recentThreatKeys.delete(k);
+  }
+
+  for (const t of allThreats) {
+    const key = `${t.type}|${t.source}`;
+    if (recentThreatKeys.has(key)) continue;
+    recentThreatKeys.set(key, now + THREAT_DEDUP_MS);
+
+    threatCount++;
+    mainWindow?.webContents.send('threat-detected', {
+      id:        Date.now() + Math.random(),
+      count:     threatCount,
+      type:      t.type,
+      severity:  t.severity,
+      source:    t.source,
+      detail:    t.detail || '',
+      blocked:   false,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+// ── Intelligence feeds ────────────────────────────────────────────────────────
 
 async function refreshFeeds() {
   try {
@@ -97,37 +161,6 @@ async function refreshFeeds() {
   }
 }
 
-// ── Simulated threats ─────────────────────────────────────────────────────────
-
-const THREAT_TYPES = [
-  { type: 'Port Scan',           severity: 'Medium'   },
-  { type: 'Brute Force Attempt', severity: 'High'     },
-  { type: 'DNS Anomaly',         severity: 'Low'      },
-  { type: 'Suspicious Process',  severity: 'High'     },
-  { type: 'Outbound C2 Attempt', severity: 'Critical' },
-  { type: 'Malicious URL Block', severity: 'Medium'   },
-  { type: 'SSH Auth Failure',    severity: 'Medium'   },
-  { type: 'ARP Spoofing Probe',  severity: 'High'     },
-];
-
-function randIp() {
-  return `${192 + Math.floor(Math.random() * 10)}.168.${Math.floor(Math.random() * 5)}.${Math.floor(Math.random() * 254) + 1}`;
-}
-
-function emitSimulatedThreat() {
-  const t = THREAT_TYPES[Math.floor(Math.random() * THREAT_TYPES.length)];
-  threatCount++;
-  mainWindow?.webContents.send('threat-detected', {
-    id:        Date.now(),
-    count:     threatCount,
-    type:      t.type,
-    severity:  t.severity,
-    source:    randIp(),
-    blocked:   true,
-    timestamp: new Date().toISOString(),
-  });
-}
-
 // ── IPC: System stats ─────────────────────────────────────────────────────────
 
 ipcMain.handle('get-system-stats', async () => {
@@ -137,62 +170,98 @@ ipcMain.handle('get-system-stats', async () => {
   const disk = disks.find(d => d.mount === '/') || disks[0] || {};
   const net  = nets[0] || {};
   return {
-    cpu:        Math.round(load.currentLoad),
-    cpuModel:   cpu.brand || 'Processor',
-    cpuCores:   cpu.cores  || 0,
-    ram:        Math.round((mem.used / mem.total) * 100),
-    ramUsedGB:  +(mem.used  / 1e9).toFixed(1),
-    ramTotalGB: +(mem.total / 1e9).toFixed(1),
-    disk:       disk.size ? Math.round((disk.used / disk.size) * 100) : 0,
-    diskUsedGB: disk.used  ? Math.round(disk.used  / 1e9) : 0,
-    diskTotalGB:disk.size  ? Math.round(disk.size  / 1e9) : 0,
-    netInKB:    Math.round((net.rx_sec || 0) / 1024),
-    netOutKB:   Math.round((net.tx_sec || 0) / 1024),
+    cpu:         Math.round(load.currentLoad),
+    cpuModel:    cpu.brand || 'Processor',
+    cpuCores:    cpu.cores  || 0,
+    ram:         Math.round((mem.used / mem.total) * 100),
+    ramUsedGB:   +(mem.used  / 1e9).toFixed(1),
+    ramTotalGB:  +(mem.total / 1e9).toFixed(1),
+    disk:        disk.size ? Math.round((disk.used / disk.size) * 100) : 0,
+    diskUsedGB:  disk.used  ? Math.round(disk.used  / 1e9) : 0,
+    diskTotalGB: disk.size  ? Math.round(disk.size  / 1e9) : 0,
+    netInKB:     Math.round((net.rx_sec || 0) / 1024),
+    netOutKB:    Math.round((net.tx_sec || 0) / 1024),
   };
 });
 
 // ── IPC: Security checks ──────────────────────────────────────────────────────
 
 ipcMain.handle('get-security-checks', () => {
-  const run = cmd => { try { return execSync(cmd, { timeout: 5000 }).toString().trim(); } catch { return ''; } };
+  const run = cmd => {
+    try { return execSync(cmd, { timeout: 5000 }).toString().trim(); }
+    catch { return ''; }
+  };
   const checks = [];
 
-  const fw = run('/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null');
-  checks.push({ id: 'firewall', name: 'Firewall', icon: 'firewall',
-    status: fw.includes('enabled') ? 'pass' : 'fail',
-    detail: fw.includes('enabled') ? 'Enabled — blocking unsolicited connections' : 'Disabled — your Mac is exposed to the network',
-    fix: 'System Settings → Network → Firewall' });
+  if (process.platform === 'darwin') {
+    const fw = run('/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null');
+    checks.push({ id: 'firewall', name: 'Firewall', icon: 'firewall',
+      status: fw.includes('enabled') ? 'pass' : 'fail',
+      detail: fw.includes('enabled') ? 'Enabled — blocking unsolicited connections' : 'Disabled — your Mac is exposed to the network',
+      fix: 'System Settings → Network → Firewall' });
 
-  const fv = run('fdesetup status 2>/dev/null');
-  checks.push({ id: 'filevault', name: 'FileVault Encryption', icon: 'lock',
-    status: fv.includes('On') ? 'pass' : 'warn',
-    detail: fv.includes('On') ? 'Disk encryption is active' : 'Disk is unencrypted — data is readable if the device is lost',
-    fix: 'System Settings → Privacy & Security → FileVault' });
+    const fv = run('fdesetup status 2>/dev/null');
+    checks.push({ id: 'filevault', name: 'FileVault Encryption', icon: 'lock',
+      status: fv.includes('On') ? 'pass' : 'warn',
+      detail: fv.includes('On') ? 'Disk encryption is active' : 'Disk is unencrypted — data is readable if the device is lost',
+      fix: 'System Settings → Privacy & Security → FileVault' });
 
-  const sip = run('csrutil status 2>/dev/null');
-  checks.push({ id: 'sip', name: 'System Integrity Protection', icon: 'shield',
-    status: sip.includes('enabled') ? 'pass' : 'warn',
-    detail: sip.includes('enabled') ? 'SIP is protecting system files' : 'SIP is disabled — system files are modifiable',
-    fix: 'Re-enable from macOS Recovery (hold Power on Apple Silicon)' });
+    const sip = run('csrutil status 2>/dev/null');
+    checks.push({ id: 'sip', name: 'System Integrity Protection', icon: 'shield',
+      status: sip.includes('enabled') ? 'pass' : 'warn',
+      detail: sip.includes('enabled') ? 'SIP is protecting system files' : 'SIP is disabled — system files are modifiable',
+      fix: 'Re-enable from macOS Recovery (hold Power on Apple Silicon)' });
 
-  const gk = run('spctl --status 2>/dev/null');
-  checks.push({ id: 'gatekeeper', name: 'Gatekeeper', icon: 'gatekeeper',
-    status: gk.includes('enabled') ? 'pass' : 'warn',
-    detail: gk.includes('enabled') ? 'Only verified apps are allowed' : 'Unverified apps can run freely',
-    fix: 'System Settings → Privacy & Security' });
+    const gk = run('spctl --status 2>/dev/null');
+    checks.push({ id: 'gatekeeper', name: 'Gatekeeper', icon: 'gatekeeper',
+      status: gk.includes('enabled') ? 'pass' : 'warn',
+      detail: gk.includes('enabled') ? 'Only verified apps are allowed' : 'Unverified apps can run freely',
+      fix: 'System Settings → Privacy & Security' });
 
-  const au = run('defaults read /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled 2>/dev/null');
-  checks.push({ id: 'updates', name: 'Automatic Updates', icon: 'refresh',
-    status: au === '1' ? 'pass' : 'warn',
-    detail: au === '1' ? 'macOS checks for security updates automatically' : 'Auto-updates are off — patches must be applied manually',
-    fix: 'System Settings → General → Software Update' });
+    const au = run('defaults read /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled 2>/dev/null');
+    checks.push({ id: 'updates', name: 'Automatic Updates', icon: 'refresh',
+      status: au === '1' ? 'pass' : 'warn',
+      detail: au === '1' ? 'macOS checks for security updates automatically' : 'Auto-updates are off — patches must be applied manually',
+      fix: 'System Settings → General → Software Update' });
 
-  const sl = run('defaults read com.apple.screensaver idleTime 2>/dev/null');
-  const idle = parseInt(sl, 10) || 0;
-  checks.push({ id: 'screenlock', name: 'Screen Lock', icon: 'screenlock',
-    status: idle > 0 && idle <= 300 ? 'pass' : 'warn',
-    detail: idle > 0 ? `Screen locks after ${Math.round(idle / 60)} min of inactivity` : 'Screen never locks automatically',
-    fix: 'System Settings → Lock Screen' });
+    const sl = run('defaults read com.apple.screensaver idleTime 2>/dev/null');
+    const idle = parseInt(sl, 10) || 0;
+    checks.push({ id: 'screenlock', name: 'Screen Lock', icon: 'screenlock',
+      status: idle > 0 && idle <= 300 ? 'pass' : 'warn',
+      detail: idle > 0 ? `Screen locks after ${Math.round(idle / 60)} min of inactivity` : 'Screen never locks automatically',
+      fix: 'System Settings → Lock Screen' });
+
+  } else if (process.platform === 'win32') {
+    const fwStatus = run('powershell -NoProfile -Command "Get-NetFirewallProfile | Select-Object -ExpandProperty Enabled" 2>nul');
+    checks.push({ id: 'firewall', name: 'Windows Firewall', icon: 'firewall',
+      status: fwStatus.includes('True') ? 'pass' : 'fail',
+      detail: fwStatus.includes('True') ? 'Windows Firewall is active' : 'Firewall is OFF — enable it immediately',
+      fix: 'Windows Security → Firewall & network protection' });
+
+    const defStatus = run('powershell -NoProfile -Command "(Get-MpComputerStatus).RealTimeProtectionEnabled" 2>nul');
+    checks.push({ id: 'defender', name: 'Windows Defender', icon: 'shield',
+      status: defStatus.trim() === 'True' ? 'pass' : 'fail',
+      detail: defStatus.trim() === 'True' ? 'Real-time protection is active' : 'Defender real-time protection is OFF',
+      fix: 'Windows Security → Virus & threat protection' });
+
+    const uacStatus = run('powershell -NoProfile -Command "(Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System).EnableLUA" 2>nul');
+    checks.push({ id: 'uac', name: 'User Account Control', icon: 'lock',
+      status: uacStatus.trim() === '1' ? 'pass' : 'warn',
+      detail: uacStatus.trim() === '1' ? 'UAC is enabled' : 'UAC is disabled — malware can escalate privileges silently',
+      fix: 'Control Panel → User Accounts → Change UAC settings' });
+
+    const auStatus = run('powershell -NoProfile -Command "(Get-Service wuauserv).Status" 2>nul');
+    checks.push({ id: 'updates', name: 'Windows Update Service', icon: 'refresh',
+      status: auStatus.includes('Running') ? 'pass' : 'warn',
+      detail: auStatus.includes('Running') ? 'Windows Update service is running' : 'Windows Update service is stopped',
+      fix: 'Services → Windows Update → Start' });
+
+    const bitlocker = run('powershell -NoProfile -Command "manage-bde -status C: 2>nul | Select-String \'Protection Status\'" 2>nul');
+    checks.push({ id: 'bitlocker', name: 'BitLocker Encryption', icon: 'lock',
+      status: bitlocker.includes('Protection On') ? 'pass' : 'warn',
+      detail: bitlocker.includes('Protection On') ? 'Drive C: is encrypted with BitLocker' : 'Drive C: is not encrypted',
+      fix: 'Control Panel → BitLocker Drive Encryption' });
+  }
 
   return checks;
 });
@@ -217,7 +286,8 @@ ipcMain.handle('get-network-devices', () => {
 // ── IPC: Processes ────────────────────────────────────────────────────────────
 
 ipcMain.handle('get-processes', async () => {
-  const SUSPICIOUS = ['xmrig','miner','coinminer','cryptominer','keylogger','backdoor','netcat','ncat','reverse_shell'];
+  const SUSPICIOUS = ['xmrig','miner','coinminer','cryptominer','keylogger','backdoor',
+                      'netcat','ncat','reverse_shell','mimikatz','cobalt','empire','metasploit'];
   try {
     const { list } = await si.processes();
     return list.sort((a, b) => b.cpu - a.cpu).slice(0, 40).map(p => ({
@@ -226,6 +296,18 @@ ipcMain.handle('get-processes', async () => {
       suspicious: SUSPICIOUS.some(s => p.name.toLowerCase().includes(s)),
     }));
   } catch { return []; }
+});
+
+// ── IPC: Live connections & ports ─────────────────────────────────────────────
+
+ipcMain.handle('get-connections', () => {
+  try { return connMonitor.snapshot().connections; }
+  catch { return []; }
+});
+
+ipcMain.handle('get-ports', () => {
+  try { return portMonitor.snapshot().ports; }
+  catch { return []; }
 });
 
 // ── IPC: Intelligence feeds ───────────────────────────────────────────────────
@@ -237,18 +319,17 @@ ipcMain.handle('refresh-feeds', async () => { await refreshFeeds(); return cache
 
 ipcMain.handle('cred-get-masked', () => store.getMasked());
 ipcMain.handle('cred-configured', () => store.getConfiguredKeys());
-ipcMain.handle('cred-set', (_, key, value) => { store.set(key, value); return true; });
-ipcMain.handle('cred-delete', (_, key) => { store.delete(key); return true; });
+ipcMain.handle('cred-set',    (_, key, value) => { store.set(key, value); return true; });
+ipcMain.handle('cred-delete', (_, key)        => { store.delete(key); return true; });
 
 // ── IPC: Test API connections ─────────────────────────────────────────────────
 
 ipcMain.handle('cred-test', async (_, service) => {
   const key = store.get(service);
   if (!key) return { ok: false, msg: 'No API key configured' };
-
   try {
     if (service === 'virustotal') {
-      const r = await fetchJSON(`https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8`, { 'x-apikey': key });
+      const r = await fetchJSON('https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8', { 'x-apikey': key });
       return r.status === 200 ? { ok: true, msg: 'Connected' } : { ok: false, msg: `HTTP ${r.status}` };
     }
     if (service === 'abuseipdb') {
@@ -260,13 +341,49 @@ ipcMain.handle('cred-test', async (_, service) => {
       return r.status === 200 ? { ok: true, msg: 'Connected' } : { ok: false, msg: `HTTP ${r.status}` };
     }
     if (service === 'hibp') {
-      // HIBP requires a real email to test — just validate key length
       return key.length >= 20 ? { ok: true, msg: 'Key saved (test with a scan)' } : { ok: false, msg: 'Key looks too short' };
+    }
+    if (service === 'safebrowsing') {
+      return key.length >= 30 ? { ok: true, msg: 'Key saved' } : { ok: false, msg: 'Key looks too short' };
     }
     return { ok: false, msg: 'Unknown service' };
   } catch (e) {
     return { ok: false, msg: e.message };
   }
+});
+
+// ── IPC: Scanners ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('scan-ip', async (_, ip) => {
+  return ipScanner.checkIP(ip, {
+    abuseipdb:  store.get('abuseipdb'),
+    virustotal: store.get('virustotal'),
+  });
+});
+
+ipcMain.handle('scan-url', async (_, url) => {
+  return urlCheck.checkURL(url, {
+    virustotal:   store.get('virustotal'),
+    safebrowsing: store.get('safebrowsing'),
+  });
+});
+
+ipcMain.handle('scan-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:       'Select File to Scan',
+    properties:  ['openFile'],
+    buttonLabel: 'Scan with VirusTotal',
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  return fileScanner.scanFile(result.filePaths[0], store.get('virustotal'));
+});
+
+ipcMain.handle('check-email-breach', async (_, email) => {
+  return breachCheck.checkEmail(email, store.get('hibp'));
+});
+
+ipcMain.handle('check-password-breach', async (_, password) => {
+  return breachCheck.checkPassword(password);
 });
 
 // ── IPC: App info ─────────────────────────────────────────────────────────────
@@ -281,7 +398,7 @@ ipcMain.handle('check-for-updates', () => {
   return app.getVersion();
 });
 
-// ── Fetch helper (main process — no CORS) ────────────────────────────────────
+// ── Fetch helper ──────────────────────────────────────────────────────────────
 
 function fetchJSON(url, headers) {
   const https = require('https');
@@ -302,7 +419,6 @@ app.whenReady().then(() => {
   store.init(app.getPath('userData'));
   createWindow();
 
-  // Auto-updater (only when packaged)
   if (app.isPackaged) {
     const { autoUpdater } = require('electron-updater');
     autoUpdater.checkForUpdatesAndNotify();
