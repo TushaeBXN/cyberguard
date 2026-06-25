@@ -2,7 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
 <title>CyberGuard</title>
+<script>
+  window.onerror = function(msg, src, line, col, err) {
+    var root = document.getElementById('root');
+    if (root) root.innerHTML = '<pre style="color:red;padding:30px;font-size:13px;white-space:pre-wrap">CyberGuard failed to start:\n\n' + msg + '\n\nAt: ' + src + ':' + line + (err ? '\n\n' + err.stack : '') + '</pre>';
+  };
+  window.addEventListener('unhandledrejection', function(e) {
+    var root = document.getElementById('root');
+    if (root && root.children.length === 0) root.innerHTML = '<pre style="color:red;padding:30px;font-size:13px;white-space:pre-wrap">Unhandled rejection:\n\n' + (e.reason && e.reason.stack ? e.reason.stack : e.reason) + '</pre>';
+  });
+</script>
 <script src="vendor/react.min.js"></script>
 <script src="vendor/react-dom.min.js"></script>
 <script src="vendor/babel.min.js"></script>
@@ -978,7 +989,8 @@ function SettingsPage({ version }) {
   const handleDelete = async (key) => { await cg.credDelete(key); setResults(p=>({...p,[key]:null})); cg.credGetMasked().then(setCreds); };
   const handleTest   = async (key) => {
     setTesting(p=>({...p,[key]:true}));
-    setResults(p=>({...p,[key]:await cg.credTest(key)}));
+    const result = await cg.credTest(key);
+    setResults(p=>({...p,[key]:result}));
     setTesting(p=>({...p,[key]:false}));
   };
   return (
