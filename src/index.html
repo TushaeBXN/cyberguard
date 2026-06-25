@@ -5,30 +5,58 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;">
   <title>CyberGuard AI</title>
-  <script src="vendor/tailwind.js"></script>
   <style>
     body { margin: 0; background: #f9fafb; }
   </style>
-  <!-- Error catcher -->
+  <!-- Diagnostic: capture console errors + show fallback if React never mounts -->
   <script>
-    window.onerror = function(msg, src, line, col) {
-      document.getElementById('root').innerHTML =
-        '<div style="padding:32px;font-family:sans-serif;color:#b91c1c;background:#fee2e2;margin:24px;border-radius:12px">' +
-        '<strong>CyberGuard failed to start:</strong><br>' + msg + '<br><small>' + src + ':' + line + ':' + col + '</small></div>';
-    };
-    window.addEventListener('unhandledrejection', function(e) {
-      document.getElementById('root').innerHTML =
-        '<div style="padding:32px;font-family:sans-serif;color:#b91c1c;background:#fee2e2;margin:24px;border-radius:12px">' +
-        '<strong>CyberGuard async error:</strong><br>' + e.reason + '</div>';
-    });
+    var _logs = [];
+    var _origErr = console.error.bind(console);
+    console.error = function() { _logs.push(Array.from(arguments).join(' ')); _origErr.apply(console, arguments); };
+
+    function _showError(msg) {
+      var el = document.getElementById('root');
+      if (el) el.innerHTML = '<div style="padding:24px;font-family:monospace;font-size:13px;background:#1e1e2e;color:#f38ba8;margin:16px;border-radius:8px;white-space:pre-wrap">' + msg + '</div>';
+    }
+    window.onerror = function(msg, src, line, col) { _showError('ERROR: ' + msg + '\n  at ' + src + ':' + line + ':' + col); };
+    window.addEventListener('unhandledrejection', function(e) { _showError('ASYNC ERROR: ' + e.reason); });
+
+    // Catch script load failures (capturing phase — these don't bubble)
+    window.addEventListener('error', function(e) {
+      if (e.target && e.target.tagName === 'SCRIPT') {
+        _showError('Script FAILED to load: ' + e.target.src + '\nCheck that vendor/ files exist.');
+      }
+    }, true);
+
+    window._stage = [];
+
+    // Fallback: if root is still empty after 5s, show all diagnostics
+    setTimeout(function() {
+      var root = document.getElementById('root');
+      if (root && root.children.length === 0) {
+        _showError(
+          'React did not mount.\n\n' +
+          'Load stages reached: ' + JSON.stringify(window._stage) + '\n\n' +
+          'window.React: ' + !!window.React + '\n' +
+          'window.ReactDOM: ' + !!window.ReactDOM + '\n' +
+          'window.Babel: ' + !!window.Babel + '\n\n' +
+          'console.error calls:\n' + (_logs.length ? _logs.join('\n') : '(none)')
+        );
+      }
+    }, 5000);
   </script>
+  <link rel="stylesheet" href="vendor/cyberguard.css">
+  <script>window._stage.push('head-scripts-done');</script>
 </head>
 <body>
 <div id="root"></div>
 
 <script src="vendor/react.min.js"></script>
+<script>window._stage.push('react');</script>
 <script src="vendor/react-dom.min.js"></script>
+<script>window._stage.push('react-dom');</script>
 <script src="vendor/babel.min.js"></script>
+<script>window._stage.push('babel'); window._stage.push('Babel-global=' + !!window.Babel);</script>
 
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
@@ -71,8 +99,8 @@ const Cpu           = p => <Ico {...p} d={[['rect',{x:'4',y:'4',width:'16',heigh
 function DashboardView({ stats, threats, secChecks }) {
   const failCount = (secChecks||[]).filter(c => c.status === 'fail').length;
   const cpu = stats ? Math.round(stats.cpu) : 0;
-  const ram = stats ? (stats.ramUsed / 1024).toFixed(1) : '—';
-  const net = stats ? ((stats.netRx + stats.netTx) / 1024 / 1024).toFixed(1) : '—';
+  const ram = stats ? stats.ramUsedGB.toFixed(1) : '—';
+  const net = stats ? ((stats.netInKB + stats.netOutKB) / 1024).toFixed(1) : '—';
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -107,7 +135,7 @@ function DashboardView({ stats, threats, secChecks }) {
               ? <div className="text-sm text-gray-500">No threats detected — monitoring active</div>
               : threats.slice(0,10).map((t,i) => (
                 <div key={i} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">{t.description || t.message || JSON.stringify(t)}</span>
+                  <span className="text-gray-700">{t.description || t.message || t.detail || t.type || '—'}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${
                     t.severity==='critical'?'bg-red-100 text-red-700':
                     t.severity==='high'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700'}`}>
@@ -466,7 +494,16 @@ function IDSIPSView({ threats }) {
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {threats.length===0
               ? <div className="text-sm text-red-700">No active threats detected</div>
-              : threats.slice(0,10).map((t,i)=><div key={i} className="text-sm text-red-700">{t.description||t.message||'Unknown'}</div>)
+              : threats.slice(0,10).map((t,i)=>(
+                <div key={i} className="text-sm text-red-700 bg-white rounded-lg p-2 mb-1">
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="font-medium">{t.type||t.description||t.message||'Unknown'}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.severity==='critical'?'bg-red-200 text-red-800':t.severity==='high'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700'}`}>{t.severity||'low'}</span>
+                  </div>
+                  {t.detail && <div className="text-xs text-red-500 mt-0.5 truncate">{t.detail}</div>}
+                  {t.source && <div className="text-xs text-gray-400 font-mono mt-0.5">{t.source}</div>}
+                </div>
+              ))
             }
           </div>
         </div>
@@ -494,49 +531,144 @@ function IDSIPSView({ threats }) {
 
 // ── Forensics ─────────────────────────────────────────────────────────────────
 function ForensicsView() {
+  const [procs, setProcs]       = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [filter, setFilter]     = useState('all'); // all | suspicious
+  const [killing, setKilling]   = useState(null);
+  const [killMsg, setKillMsg]   = useState(null);
+  const [search, setSearch]     = useState('');
+
+  const refresh = () => {
+    setLoading(true);
+    const cg = window.cyberguard || {};
+    (cg.getProcesses ? cg.getProcesses() : Promise.resolve([])).then(list => {
+      setProcs(list || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  };
+
+  useEffect(() => { refresh(); const t = setInterval(refresh, 8000); return () => clearInterval(t); }, []);
+
+  const handleKill = (pid, name) => {
+    if (!window.confirm(`Terminate "${name}" (PID ${pid})?`)) return;
+    setKilling(pid);
+    const cg = window.cyberguard || {};
+    (cg.killProcess ? cg.killProcess(pid) : Promise.resolve({ ok: false, error: 'not available' })).then(r => {
+      setKilling(null);
+      setKillMsg(r.ok ? `✓ Process ${pid} terminated` : `✗ Failed: ${r.error}`);
+      setTimeout(() => setKillMsg(null), 3000);
+      if (r.ok) refresh();
+    });
+  };
+
+  const visible = procs.filter(p => {
+    if (filter === 'suspicious' && !p.suspicious) return false;
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !String(p.pid).includes(search)) return false;
+    return true;
+  });
+
+  const suspicious = procs.filter(p => p.suspicious);
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">Digital Forensics & Attribution</h3>
-      <div className="grid grid-cols-3 gap-6 mb-6">
-        {[[Database,'2.4TB','Evidence Collected','text-blue-500'],[FileText,'847','Artifacts Analyzed','text-green-500'],[Eye,'23','Active Investigations','text-purple-500']].map(([Icon,n,l,c],i)=>(
-          <div key={i} className="p-4 border border-gray-200 rounded-xl text-center"><Icon className={`w-8 h-8 ${c} mx-auto mb-2`}/><div className="text-2xl font-bold text-gray-900">{n}</div><div className="text-sm text-gray-600">{l}</div></div>
+    <div className="space-y-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-4">
+        {[[Database, String(procs.length), 'Running Processes', 'text-blue-500'],
+          [AlertTriangle, String(suspicious.length), 'Flagged Suspicious', suspicious.length > 0 ? 'text-red-500' : 'text-green-500'],
+          [Cpu, procs.length ? (procs.reduce((s,p)=>s+p.cpu,0)).toFixed(1)+'%' : '—', 'Total CPU', 'text-purple-500']
+        ].map(([Icon,n,l,c],i) => (
+          <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+            <Icon className={`w-7 h-7 ${c} mx-auto mb-1`}/>
+            <div className="text-xl font-bold text-gray-900">{n}</div>
+            <div className="text-xs text-gray-500">{l}</div>
+          </div>
         ))}
       </div>
-      <div className="bg-gray-50 rounded-xl p-4 mb-6">
-        <h4 className="font-semibold text-gray-900 mb-4">Threat Attribution</h4>
-        <div className="space-y-3">
-          <div className="bg-white p-4 rounded-lg">
-            <div className="flex justify-between items-start mb-2">
-              <div className="font-medium text-gray-900">Attack Pattern Classified</div>
-              <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">High Confidence</span>
-            </div>
-            <div className="text-sm text-gray-600">AdaptiveDefense classified attack pattern and saved rule to data/adaptive_defense.jsonl</div>
+
+      {/* Process Inspector */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className="text-lg font-bold text-gray-900">Live Process Inspector</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            {killMsg && <span className={`text-xs px-2 py-1 rounded-full font-medium ${killMsg.startsWith('✓')?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{killMsg}</span>}
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or PID…"
+              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <select value={filter} onChange={e=>setFilter(e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="all">All Processes</option>
+              <option value="suspicious">Flagged Only</option>
+            </select>
+            <button onClick={refresh} disabled={loading}
+              className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </button>
           </div>
-          <div className="bg-white p-4 rounded-lg">
-            <div className="flex justify-between items-start mb-2">
-              <div className="font-medium text-gray-900">Distillation Attack Detected</div>
-              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">Medium Confidence</span>
-            </div>
-            <div className="text-sm text-gray-600">Extraction pattern rate exceeded 15 queries/60s. Defense mode: active (20% noise injection).</div>
-          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-100">
+                <th className="pb-2 pr-4">PID</th>
+                <th className="pb-2 pr-4">Name</th>
+                <th className="pb-2 pr-4">User</th>
+                <th className="pb-2 pr-4">CPU %</th>
+                <th className="pb-2 pr-4">MEM %</th>
+                <th className="pb-2 pr-4">Status</th>
+                <th className="pb-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.length === 0 && (
+                <tr><td colSpan="7" className="py-6 text-center text-gray-400 text-sm">{loading ? 'Loading processes…' : 'No results'}</td></tr>
+              )}
+              {visible.map((p,i) => (
+                <tr key={p.pid} className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${p.suspicious ? 'bg-red-50' : ''}`}>
+                  <td className="py-2 pr-4 font-mono text-gray-500">{p.pid}</td>
+                  <td className="py-2 pr-4 font-medium text-gray-900 max-w-xs truncate">{p.name}</td>
+                  <td className="py-2 pr-4 text-gray-500">{p.user}</td>
+                  <td className="py-2 pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 bg-gray-100 rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full ${p.cpu>50?'bg-red-500':p.cpu>20?'bg-yellow-500':'bg-green-500'}`} style={{width:`${Math.min(p.cpu,100)}%`}}/>
+                      </div>
+                      <span className="text-gray-700">{p.cpu}%</span>
+                    </div>
+                  </td>
+                  <td className="py-2 pr-4 text-gray-700">{p.mem}%</td>
+                  <td className="py-2 pr-4">
+                    {p.suspicious
+                      ? <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">⚠ Flagged</span>
+                      : <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Normal</span>}
+                  </td>
+                  <td className="py-2">
+                    <button onClick={() => handleKill(p.pid, p.name)} disabled={killing === p.pid}
+                      className="text-xs bg-red-50 text-red-600 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+                      {killing === p.pid ? 'Killing…' : 'Kill'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-6">
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Memory Analysis</h4>
-          <div className="space-y-2 text-sm">
-            {[['Process Injection','3 instances','text-red-600'],['Rootkit Signatures','Investigating','text-yellow-600'],['Network Connections','Clean','text-green-600']].map(([k,v,c],i)=>(
-              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
-            ))}
-          </div>
-        </div>
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Disk Forensics</h4>
-          <div className="space-y-2 text-sm">
-            {[['Deleted Files Recovery','247 files','text-blue-600'],['Timeline Analysis','Complete','text-green-600'],['Hash Verification','Verified','text-green-600']].map(([k,v,c],i)=>(
-              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
-            ))}
-          </div>
+
+      {/* Attribution cards */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h4 className="font-semibold text-gray-900 mb-4">Threat Attribution</h4>
+        <div className="space-y-3">
+          {[['Attack Pattern Classified','AdaptiveDefense classified attack pattern and saved rule to data/adaptive_defense.jsonl','High Confidence','bg-red-100 text-red-800'],
+            ['Distillation Attack Detected','Extraction pattern rate exceeded 15 queries/60s. Defense mode: active (20% noise injection).','Medium Confidence','bg-yellow-100 text-yellow-800']
+          ].map(([title,desc,badge,bc],i)=>(
+            <div key={i} className="bg-gray-50 p-4 rounded-xl">
+              <div className="flex justify-between items-start mb-1">
+                <div className="font-medium text-gray-900">{title}</div>
+                <span className={`text-xs ${bc} px-2 py-0.5 rounded-full`}>{badge}</span>
+              </div>
+              <div className="text-sm text-gray-600">{desc}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -594,17 +726,66 @@ function NetworkMapView({ devices, ports }) {
 }
 
 // ── AI Assistant ──────────────────────────────────────────────────────────────
-function AIAssistantView() {
+function AIAssistantView({ stats, threats, secChecks, ports }) {
+  const [tab, setTab]           = useState('chat');
   const [messages, setMessages] = useState([{role:'assistant',content:'CyberGuard AI ready. Ask me about vulnerabilities, exploit analysis, or security research.'}]);
   const [input, setInput]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [aiStatus, setAiStatus] = useState(null);
+  const [memories, setMemories] = useState([]);
+  const [crashes,  setCrashes]  = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [memTotal, setMemTotal] = useState(0);
+  const [dbLoading, setDbLoading] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
   useEffect(() => {
     if (cg.kerriganStatus) cg.kerriganStatus().then(s=>setAiStatus(s)).catch(()=>{});
   }, []);
+
+  const loadDb = () => {
+    setDbLoading(true);
+    Promise.allSettled([
+      cg.dbMemories ? cg.dbMemories(20, 0) : Promise.resolve({memories:[],total:0}),
+      cg.dbCrashes  ? cg.dbCrashes(20)     : Promise.resolve({crashes:[]}),
+      cg.dbSessions ? cg.dbSessions(10)    : Promise.resolve({sessions:[]}),
+    ]).then(([m, c, s]) => {
+      if (m.value) { setMemories(m.value.memories||[]); setMemTotal(m.value.total||0); }
+      if (c.value) setCrashes(c.value.crashes||[]);
+      if (s.value) setSessions(s.value.sessions||[]);
+      setDbLoading(false);
+    });
+  };
+
+  useEffect(() => { if (tab === 'memory' || tab === 'crashes' || tab === 'sessions') loadDb(); }, [tab]);
+
+  const buildSystemContext = () => {
+    const lines = ['[LIVE SYSTEM STATE — use this to answer questions about this specific machine]'];
+    if (stats) {
+      lines.push(`CPU: ${Math.round(stats.cpu)}% | RAM: ${stats.ramUsedGB}/${stats.ramTotalGB} GB | Net I/O: ${((stats.netInKB+stats.netOutKB)/1024).toFixed(1)} MB/s`);
+    }
+    if (threats && threats.length) {
+      lines.push(`Active threats (${threats.length}):`);
+      threats.slice(0,10).forEach(t => lines.push(`  - [${t.severity||'low'}] ${t.type} | ${t.detail||''} | src: ${t.source||'?'}`));
+    } else {
+      lines.push('Active threats: none detected');
+    }
+    if (secChecks && secChecks.length) {
+      const failed = secChecks.filter(c=>c.status==='fail'||c.status==='warn');
+      if (failed.length) {
+        lines.push(`Security check warnings (${failed.length}):`);
+        failed.forEach(c => lines.push(`  - [${c.status}] ${c.name}: ${c.detail||''}`));
+      } else {
+        lines.push('Security checks: all passing');
+      }
+    }
+    if (ports && ports.length) {
+      const open = ports.filter(p=>p.state==='LISTEN'||p.state==='listen');
+      lines.push(`Open listening ports (${open.length}): ${open.slice(0,8).map(p=>`${p.port}/${p.process||'?'}`).join(', ')}`);
+    }
+    return lines.join('\n');
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -615,50 +796,151 @@ function AIAssistantView() {
     setLoading(true);
     try {
       const history = next.slice(-8).map(m=>({role:m.role,content:m.content}));
-      const r = await cg.kerriganChat(text, history);
+      const systemCtx = buildSystemContext();
+      const r = await cg.kerriganChat(text, history, systemCtx);
       setMessages(p=>[...p,{role:'assistant',content:r.reply||r.error||'No response'}]);
     } catch(e) {
       setMessages(p=>[...p,{role:'assistant',content:`[Error: ${e.message}]`}]);
     } finally { setLoading(false); }
   };
 
+  const tabs = [['chat','Chat'],['memory','Memories'],['crashes','Crashes'],['sessions','Sessions']];
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col" style={{height:'calc(100vh - 180px)'}}>
-      <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center">
-          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
-            <MessageSquare className="w-5 h-5 text-white"/>
+          <div className="w-9 h-9 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
+            <MessageSquare className="w-4 h-4 text-white"/>
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900">AI Security Assistant</h3>
-            <p className="text-xs text-gray-500">{aiStatus?.online ? `Online — ${aiStatus.model||'connected'}` : 'Connecting…'}</p>
+            <h3 className="text-base font-bold text-gray-900">Kerrigan AI — {aiStatus?.model||'deepseek-coder:6.7b'}</h3>
+            <p className="text-xs text-gray-500">{aiStatus?.online ? `Online · ${memTotal} memories in DB` : 'Connecting…'}</p>
           </div>
         </div>
-        {aiStatus?.online && <div className="flex items-center text-xs text-gray-500"><div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>Ready</div>}
+        <div className={`flex items-center text-xs px-2 py-1 rounded-full ${aiStatus?.online?'bg-green-50 text-green-700':'bg-gray-100 text-gray-500'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${aiStatus?.online?'bg-green-500':'bg-gray-400'}`}/>
+          {aiStatus?.online ? 'Ready' : 'Offline'}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.map((m,i)=>(
-          <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
-            <div className={`max-w-3xl px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap break-words ${m.role==='user'?'bg-blue-600 text-white rounded-br-sm':'bg-gray-100 text-gray-800 rounded-bl-sm'}`}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        {loading && <div className="flex justify-start"><div className="bg-gray-100 text-gray-500 px-4 py-3 rounded-2xl rounded-bl-sm text-sm">Thinking…</div></div>}
-        <div ref={endRef}/>
-      </div>
-      <div className="p-4 border-t border-gray-100">
-        <div className="flex gap-3">
-          <input value={input} onChange={e=>setInput(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&(e.preventDefault(),send())}
-            placeholder="Ask about vulnerabilities, malware analysis, exploit techniques…"
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          <button onClick={send} disabled={loading||!input.trim()}
-            className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors flex-shrink-0">
-            <Send className="w-5 h-5"/>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-100 px-4">
+        {tabs.map(([id,label])=>(
+          <button key={id} onClick={()=>setTab(id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors mr-1 ${tab===id?'border-blue-600 text-blue-600':'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {label}
           </button>
-        </div>
+        ))}
       </div>
+
+      {/* Chat tab */}
+      {tab==='chat' && <>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {messages.map((m,i)=>(
+            <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
+              <div className={`max-w-3xl px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap break-words ${m.role==='user'?'bg-blue-600 text-white rounded-br-sm':'bg-gray-100 text-gray-800 rounded-bl-sm'}`}>
+                {m.content}
+              </div>
+            </div>
+          ))}
+          {loading && <div className="flex justify-start"><div className="bg-gray-100 text-gray-500 px-4 py-3 rounded-2xl rounded-bl-sm text-sm animate-pulse">Thinking…</div></div>}
+          <div ref={endRef}/>
+        </div>
+        <div className="p-4 border-t border-gray-100">
+          <div className="flex gap-2">
+            <input value={input} onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&(e.preventDefault(),send())}
+              placeholder="Ask about vulnerabilities, malware, exploit techniques…"
+              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <button onClick={send} disabled={loading||!input.trim()}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors">
+              <Send className="w-4 h-4"/>
+            </button>
+          </div>
+        </div>
+      </>}
+
+      {/* Memory tab */}
+      {tab==='memory' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-medium text-gray-700">{memTotal} total memories in kerrigan_db</span>
+            <button onClick={loadDb} disabled={dbLoading} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 disabled:opacity-50">
+              {dbLoading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+          {memories.length === 0
+            ? <div className="text-sm text-gray-400 text-center py-12">{dbLoading ? 'Loading…' : 'No memories yet'}</div>
+            : memories.map((m,i)=>(
+              <div key={m.id} className="border border-gray-100 rounded-xl p-4 mb-3 hover:bg-gray-50">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">{m.expert||'general'}</span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{m.created_at ? new Date(m.created_at).toLocaleString() : '—'}</span>
+                </div>
+                <p className="text-sm text-gray-800 mt-1">{m.content}</p>
+                {m.tags && <p className="text-xs text-gray-400 mt-1">{m.tags}</p>}
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* Crashes tab */}
+      {tab==='crashes' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-medium text-gray-700">Crash findings from kerrigan_db</span>
+            <button onClick={loadDb} disabled={dbLoading} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 disabled:opacity-50">
+              {dbLoading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+          {crashes.length === 0
+            ? <div className="text-sm text-gray-400 text-center py-12">{dbLoading ? 'Loading…' : 'No crashes logged'}</div>
+            : crashes.map((c,i)=>(
+              <div key={i} className={`border rounded-xl p-4 mb-3 ${c.exploitability==='high'?'border-red-200 bg-red-50':c.exploitability==='medium'?'border-yellow-200 bg-yellow-50':'border-gray-200'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-sm text-gray-900">{c.crash_type||c.type||'Unknown crash'}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.exploitability==='high'?'bg-red-200 text-red-800':c.exploitability==='medium'?'bg-yellow-200 text-yellow-800':'bg-gray-200 text-gray-700'}`}>
+                    {c.exploitability||'unknown'} exploitability
+                  </span>
+                </div>
+                {c.signal && <p className="text-xs text-gray-600">Signal: {c.signal}</p>}
+                {c.created_at && <p className="text-xs text-gray-400 mt-1">{new Date(c.created_at).toLocaleString()}</p>}
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* Sessions tab */}
+      {tab==='sessions' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-medium text-gray-700">Kerrigan training sessions</span>
+            <button onClick={loadDb} disabled={dbLoading} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 disabled:opacity-50">
+              {dbLoading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+          {sessions.length === 0
+            ? <div className="text-sm text-gray-400 text-center py-12">{dbLoading ? 'Loading…' : 'No sessions logged'}</div>
+            : sessions.map((s,i)=>(
+              <div key={i} className="border border-gray-200 rounded-xl p-4 mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-sm text-gray-900">{s.session_id||`Session ${s.id}`}</span>
+                  <span className="text-xs text-gray-400">{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-gray-600">
+                  {s.crashes_found != null && <span>Crashes: <strong>{s.crashes_found}</strong></span>}
+                  {s.patches_generated != null && <span>Patches: <strong>{s.patches_generated}</strong></span>}
+                  {s.status && <span>Status: <strong>{s.status}</strong></span>}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      )}
     </div>
   );
 }
@@ -750,7 +1032,7 @@ function App() {
           <div className="mt-6 p-4 bg-gray-50 rounded-xl">
             <h4 className="font-semibold text-gray-900 text-sm mb-3">System Status</h4>
             <div className="space-y-2 text-xs">
-              {[['CPU', `${cpu}%`],['Threats', String(threats.length)],['Connections', String(conns.length)],['RAM', stats?`${(stats.ramUsed/1024).toFixed(1)}GB`:'—']].map(([k,v],i)=>(
+              {[['CPU', `${cpu}%`],['Threats', String(threats.length)],['Connections', String(conns.length)],['RAM', stats?`${stats.ramUsedGB.toFixed(1)}GB`:'—']].map(([k,v],i)=>(
                 <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium">{v}</span></div>
               ))}
             </div>
@@ -760,7 +1042,7 @@ function App() {
         {/* Main content */}
         <div className="flex-1 min-w-0">
           {active==='dashboard'       && <DashboardView stats={stats} threats={threats} secChecks={secChecks}/>}
-          {active==='ai-assistant'    && <AIAssistantView/>}
+          {active==='ai-assistant'    && <AIAssistantView stats={stats} threats={threats} secChecks={secChecks} ports={ports}/>}
           {active==='ai-patcher'      && <AIPatcherView/>}
           {active==='packet-analyzer' && <PacketAnalyzerView connections={conns}/>}
           {active==='vuln-scanner'    && <VulnScannerView secChecks={secChecks}/>}

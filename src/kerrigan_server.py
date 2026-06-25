@@ -15,6 +15,15 @@ import time
 import json
 import asyncio
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.environ.get("DB_PORT", 3306))
+DB_USER = os.environ.get("DB_USER", "root")
+DB_PASS = os.environ.get("DB_PASS", "")
+DB_NAME = os.environ.get("DB_NAME", "kerrigan_db")
 
 # ── Add kerrigan-fantasma to path ─────────────────────────────────────────────
 KERRIGAN_DIR = os.environ.get("KERRIGAN_PATH", str(Path(__file__).parent))
@@ -48,6 +57,75 @@ _overmind = None
 _memory   = None
 _model    = "deepseek-coder:6.7b"
 
+# ── MySQL direct connection ────────────────────────────────────────────────────
+import hashlib
+
+def _get_db():
+    try:
+        import mysql.connector
+        return mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASS, database=DB_NAME
+        )
+    except Exception as e:
+        print(f"[DB] MySQL unavailable: {e}")
+        return None
+
+def _ensure_conversations_table():
+    conn = _get_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                conv_id    VARCHAR(32) NOT NULL,
+                role       VARCHAR(16) NOT NULL,
+                content    TEXT NOT NULL,
+                model      VARCHAR(64),
+                blocked    TINYINT(1) DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_conv (conv_id),
+                INDEX idx_created (created_at)
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Table create error: {e}")
+    finally:
+        conn.close()
+
+def _save_to_db(conv_id, role, content, model=None, blocked=False):
+    conn = _get_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO conversations (conv_id, role, content, model, blocked) VALUES (%s,%s,%s,%s,%s)",
+            (conv_id, role, content, model, int(blocked))
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Save error: {e}")
+    finally:
+        conn.close()
+
+def _save_memory_to_db(content, expert="cyberguard_chat", tags=None):
+    conn = _get_db()
+    if not conn: return
+    try:
+        mem_id = hashlib.md5(content.encode()).hexdigest()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT IGNORE INTO memories (memory_id, content, expert, tags, created_at) VALUES (%s,%s,%s,%s,NOW())",
+            (mem_id, content, expert, tags)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Memory save error: {e}")
+    finally:
+        conn.close()
+
 
 def _init():
     global _router, _overmind, _memory
@@ -68,14 +146,16 @@ def _init():
 @app.on_event("startup")
 async def on_startup():
     _init()
+    _ensure_conversations_table()
     print("CyberGuard AI server ready", flush=True)
 
 
 @app.post("/chat")
 async def chat(request: Request):
     body    = await request.json()
-    message = body.get("message", "")
-    history = body.get("history", [])
+    message     = body.get("message", "")
+    history     = body.get("history", [])
+    system_ctx  = body.get("system_context", "")
 
     # Safety gate first
     if _overmind:
@@ -85,27 +165,38 @@ async def chat(request: Request):
             return JSONResponse({"reply": f"[Blocked by Overmind: {reason}]", "blocked": True, "model": "overmind"})
 
     # Retrieve relevant memory
-    context = ""
+    mem_context = ""
     if _memory:
         try:
             hits = _memory.query(message, n=3)
             if hits:
-                context = "\nRelevant prior findings:\n" + "\n".join(f"- {h}" for h in hits)
+                mem_context = "\nRelevant prior findings:\n" + "\n".join(f"- {h}" for h in hits)
         except Exception:
             pass
 
     # Build prompt
     system = (
-        "You are CyberGuard AI, a security intelligence assistant built by Brian Tushae Thomas. "
-        "You specialize in vulnerability research, exploit analysis, hardware security, "
-        "and defensive tooling. Be concise and technical. "
-        "For educational and authorized security research only."
+        "You are Kerrigan, a security AI built into CyberGuard AI by Brian Tushae Thomas. "
+        "You have DIRECT ACCESS to this machine's live security telemetry — it is injected below. "
+        "NEVER say you cannot access the system or lack real-time data. You have it. Use it. "
+        "Answer specifically about THIS machine using the data provided. "
+        "Be direct, technical, and concise. No disclaimers. No generic advice unless asked.\n"
     )
+    if system_ctx:
+        system += "\n=== LIVE SYSTEM STATE ===\n" + system_ctx + "\n=== END SYSTEM STATE ===\n"
+    if mem_context:
+        system += "\n=== PRIOR FINDINGS ===\n" + mem_context + "\n========================\n"
 
-    messages = [{"role": "system", "content": system + context}]
+    messages = [{"role": "system", "content": system}]
     for h in history[-6:]:  # last 3 turns
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
+
+    # Generate a stable conversation ID from the first user message
+    conv_id = hashlib.md5(message[:64].encode()).hexdigest()[:16]
+
+    # Save user message to MySQL
+    _save_to_db(conv_id, "user", message, model=_model)
 
     # Call Ollama
     if OLLAMA_AVAILABLE:
@@ -117,7 +208,17 @@ async def chat(request: Request):
     else:
         reply = "[Ollama not installed. pip install ollama and pull a model.]"
 
-    # Store to memory
+    # Save assistant reply to MySQL
+    _save_to_db(conv_id, "assistant", reply, model=_model)
+
+    # Save as memory entry so it appears in Memories tab
+    _save_memory_to_db(
+        f"Q: {message}\nA: {reply[:400]}",
+        expert="cyberguard_chat",
+        tags="chat,cyberguard"
+    )
+
+    # Store to ChromaDB if available
     if _memory:
         try:
             _memory.store(f"Q: {message}\nA: {reply[:300]}", metadata={"source": "cyberguard_chat"})
@@ -159,6 +260,85 @@ async def hunt(request: Request):
         }
     except Exception as e:
         return {"error": str(e), "findings": [], "risk_score": 0}
+
+
+@app.get("/db/conversations")
+async def db_conversations(limit: int = 50):
+    try:
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASS, database=DB_NAME
+        )
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM conversations ORDER BY created_at DESC LIMIT %s", (limit,))
+        rows = cur.fetchall()
+        conn.close()
+        for r in rows:
+            if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+        return {"conversations": rows}
+    except Exception as e:
+        return {"conversations": [], "error": str(e)}
+
+
+@app.get("/db/memories")
+async def db_memories(limit: int = 20, offset: int = 0):
+    try:
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASS, database=DB_NAME
+        )
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, content, expert, tags, created_at FROM memories ORDER BY created_at DESC LIMIT %s OFFSET %s", (limit, offset))
+        rows = cur.fetchall()
+        cur.execute("SELECT COUNT(*) as total FROM memories")
+        total = cur.fetchone()["total"]
+        conn.close()
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        return {"memories": rows, "total": total}
+    except Exception as e:
+        return {"memories": [], "total": 0, "error": str(e)}
+
+@app.get("/db/crashes")
+async def db_crashes(limit: int = 20):
+    try:
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASS, database=DB_NAME
+        )
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM crashes ORDER BY created_at DESC LIMIT %s", (limit,))
+        rows = cur.fetchall()
+        conn.close()
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        return {"crashes": rows}
+    except Exception as e:
+        return {"crashes": [], "error": str(e)}
+
+@app.get("/db/sessions")
+async def db_sessions(limit: int = 10):
+    try:
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASS, database=DB_NAME
+        )
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM sessions ORDER BY started_at DESC LIMIT %s", (limit,))
+        rows = cur.fetchall()
+        conn.close()
+        for r in rows:
+            for k in ["started_at","ended_at"]:
+                if r.get(k): r[k] = r[k].isoformat()
+        return {"sessions": rows}
+    except Exception as e:
+        return {"sessions": [], "error": str(e)}
 
 
 if __name__ == "__main__":

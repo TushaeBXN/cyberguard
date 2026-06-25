@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('cyberguard', {
   getSecurityChecks: () => ipcRenderer.invoke('get-security-checks'),
   getNetworkDevices: () => ipcRenderer.invoke('get-network-devices'),
   getProcesses:      () => ipcRenderer.invoke('get-processes'),
+  killProcess:       (pid) => ipcRenderer.invoke('kill-process', pid),
+  dbMemories:        (limit, offset) => ipcRenderer.invoke('db-memories', limit, offset),
+  dbCrashes:         (limit) => ipcRenderer.invoke('db-crashes', limit),
+  dbSessions:        (limit) => ipcRenderer.invoke('db-sessions', limit),
   getVersion:        () => ipcRenderer.invoke('get-version'),
   checkForUpdates:   () => ipcRenderer.invoke('check-for-updates'),
   openUrl:           (url) => ipcRenderer.invoke('open-url', url),
@@ -44,7 +48,7 @@ contextBridge.exposeInMainWorld('cyberguard', {
   off: (channel) => ipcRenderer.removeAllListeners(channel),
 
   // Kerrigan AI
-  kerriganChat:   (msg, history) => ipcRenderer.invoke('kerrigan-chat', msg, history),
+  kerriganChat:   (msg, history, ctx) => ipcRenderer.invoke('kerrigan-chat', msg, history, ctx),
   kerriganStatus: ()             => ipcRenderer.invoke('kerrigan-status'),
   kerriganHunt:   (path)        => ipcRenderer.invoke('kerrigan-hunt', path),
 });

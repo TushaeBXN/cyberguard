@@ -299,6 +299,15 @@ ipcMain.handle('get-processes', async () => {
   } catch { return []; }
 });
 
+ipcMain.handle('kill-process', async (_, pid) => {
+  try {
+    process.kill(pid, 'SIGTERM');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // ── IPC: Live connections & ports ─────────────────────────────────────────────
 
 ipcMain.handle('get-connections', () => {
@@ -392,9 +401,32 @@ ipcMain.handle('check-password-breach', async (_, password) => {
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('open-url', (_, url) => shell.openExternal(url));
 
+// ── Kerrigan DB IPC ───────────────────────────────────────────────────────────
+
+ipcMain.handle('db-memories', async (_, limit = 20, offset = 0) => {
+  try {
+    const r = await kerrigan.get(`/db/memories?limit=${limit}&offset=${offset}`);
+    return r;
+  } catch (e) { return { memories: [], total: 0, error: e.message }; }
+});
+
+ipcMain.handle('db-crashes', async (_, limit = 20) => {
+  try {
+    const r = await kerrigan.get(`/db/crashes?limit=${limit}`);
+    return r;
+  } catch (e) { return { crashes: [], error: e.message }; }
+});
+
+ipcMain.handle('db-sessions', async (_, limit = 10) => {
+  try {
+    const r = await kerrigan.get(`/db/sessions?limit=${limit}`);
+    return r;
+  } catch (e) { return { sessions: [], error: e.message }; }
+});
+
 // ── Kerrigan IPC ──────────────────────────────────────────────────────────────
 
-ipcMain.handle('kerrigan-chat',   async (_, message, history) => kerrigan.chat(message, history));
+ipcMain.handle('kerrigan-chat',   async (_, message, history, system_context) => kerrigan.chat(message, history, system_context));
 ipcMain.handle('kerrigan-status', async ()                    => kerrigan.status());
 ipcMain.handle('kerrigan-hunt',   async (_, targetPath)       => {
   const http = require('http');
@@ -471,6 +503,13 @@ function buildMenu() {
       { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
       { type: 'separator' },
       { role: 'quit' },
+    ]},
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+      { role: 'pasteAndMatchStyle' },
+      { role: 'delete' }, { role: 'selectAll' },
     ]},
     { label: 'View', submenu: [
       { role: 'reload' }, { role: 'toggleDevTools' },

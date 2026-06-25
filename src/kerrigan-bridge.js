@@ -100,12 +100,12 @@ function get(endpoint) {
 
 // ── Public API (called by ipcMain handlers) ───────────────────────────────────
 
-async function chat(message, history = []) {
+async function chat(message, history = [], system_context = '') {
   if (!_ready) {
     return { reply: '[Kerrigan offline — server not running. Check KERRIGAN_PATH.]', blocked: false };
   }
   try {
-    return await post('/chat', { message, history });
+    return await post('/chat', { message, history, system_context });
   } catch (e) {
     return { reply: `[Kerrigan error: ${e.message}]`, blocked: false };
   }
@@ -120,4 +120,4 @@ async function status() {
   }
 }
 
-module.exports = { start, stop, isReady, chat, status };
+module.exports = { start, stop, isReady, chat, status, get };
