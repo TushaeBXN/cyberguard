@@ -6,6 +6,7 @@ const path    = require('path');
 const si      = require('systeminformation');
 const store   = require('./store');
 const feeds   = require('./feeds');
+const kerrigan = require('./kerrigan-bridge');
 
 // Real monitors
 const connMonitor = require('./monitors/connections');
@@ -390,6 +391,28 @@ ipcMain.handle('check-password-breach', async (_, password) => {
 
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('open-url', (_, url) => shell.openExternal(url));
+
+// ── Kerrigan IPC ──────────────────────────────────────────────────────────────
+
+ipcMain.handle('kerrigan-chat',   async (_, message, history) => kerrigan.chat(message, history));
+ipcMain.handle('kerrigan-status', async ()                    => kerrigan.status());
+ipcMain.handle('kerrigan-hunt',   async (_, targetPath)       => {
+  const http = require('http');
+  return new Promise((resolve) => {
+    const body = JSON.stringify({ path: targetPath });
+    const req  = http.request({
+      hostname: '127.0.0.1', port: 7432, path: '/hunt',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: d }); } });
+    });
+    req.on('error', () => resolve({ error: 'Kerrigan offline' }));
+    req.write(body); req.end();
+  });
+});
 ipcMain.handle('check-for-updates', () => {
   if (app.isPackaged) {
     const { autoUpdater } = require('electron-updater');
@@ -417,6 +440,7 @@ function fetchJSON(url, headers) {
 
 app.whenReady().then(() => {
   store.init(app.getPath('userData'));
+  kerrigan.start();
   createWindow();
 
   if (app.isPackaged) {
@@ -429,6 +453,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopMonitoring();
+  kerrigan.stop();
   if (process.platform !== 'darwin') app.quit();
 });
 

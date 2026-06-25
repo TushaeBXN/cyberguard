@@ -42,4 +42,9 @@ contextBridge.exposeInMainWorld('cyberguard', {
   onUpdateDownloaded:  (cb) => ipcRenderer.on('update-downloaded',   ()     => cb()),
 
   off: (channel) => ipcRenderer.removeAllListeners(channel),
+
+  // Kerrigan AI
+  kerriganChat:   (msg, history) => ipcRenderer.invoke('kerrigan-chat', msg, history),
+  kerriganStatus: ()             => ipcRenderer.invoke('kerrigan-status'),
+  kerriganHunt:   (path)        => ipcRenderer.invoke('kerrigan-hunt', path),
 });

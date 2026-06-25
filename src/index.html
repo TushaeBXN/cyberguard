@@ -278,6 +278,7 @@ function Sidebar({ view, setView, statusCls, statusLabel, threatCount }) {
     { id:'security',     label:'Security',       icon:'✅' },
     { id:'processes',    label:'Processes',      icon:'⚙️' },
     { id:'threats',      label:'Threats',        icon:'⚠️', badge: threatCount },
+    { id:'kerrigan',     label:'Kerrigan AI',    icon:'🧠' },
     { id:'settings',     label:'Settings',       icon:'🔧' },
   ];
   return (
@@ -800,6 +801,163 @@ function ThreatsPage({ threats }) {
   );
 }
 
+// ── Kerrigan AI ───────────────────────────────────────────────────────────────
+function KerriganPage() {
+  const [messages, setMessages] = React.useState([
+    { role: 'assistant', content: 'Kerrigan online. Ask me anything about vulnerabilities, exploit techniques, or your system security.' }
+  ]);
+  const [input,   setInput]   = React.useState('');
+  const [busy,    setBusy]    = React.useState(false);
+  const [status,  setStatus]  = React.useState(null);
+  const [huntPath, setHuntPath] = React.useState('');
+  const [huntRes,  setHuntRes]  = React.useState(null);
+  const [huntBusy, setHuntBusy] = React.useState(false);
+  const [tab,     setTab]     = React.useState('chat');
+  const bottomRef = React.useRef(null);
+  const cg = window.cyberguard;
+
+  React.useEffect(() => {
+    cg.kerriganStatus && cg.kerriganStatus().then(setStatus).catch(() => setStatus({ online: false }));
+  }, []);
+
+  React.useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  async function send() {
+    if (!input.trim() || busy) return;
+    const userMsg = { role: 'user', content: input.trim() };
+    const history = messages.slice(-6);
+    setMessages(m => [...m, userMsg]);
+    setInput('');
+    setBusy(true);
+    try {
+      const res = await cg.kerriganChat(userMsg.content, history);
+      setMessages(m => [...m, { role: 'assistant', content: res.reply, blocked: res.blocked }]);
+    } catch (e) {
+      setMessages(m => [...m, { role: 'assistant', content: '[Connection error — is Kerrigan server running?]', blocked: false }]);
+    }
+    setBusy(false);
+  }
+
+  async function runHunt() {
+    if (!huntPath.trim() || huntBusy) return;
+    setHuntBusy(true); setHuntRes(null);
+    try {
+      const res = await cg.kerriganHunt(huntPath.trim());
+      setHuntRes(res);
+    } catch (e) {
+      setHuntRes({ error: e.message });
+    }
+    setHuntBusy(false);
+  }
+
+  const onlineColor = status?.online ? '#34c759' : '#ff3b30';
+  const onlineLabel = status?.online ? `Online · ${status.model || 'kerrigan'} · ${status.memory_count || 0} memories` : 'Offline — start kerrigan_server.py';
+
+  return (
+    <div className="page" style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      <div className="ph" style={{flexShrink:0}}>
+        <div>
+          <h2>🧠 Kerrigan AI</h2>
+          <p style={{color:onlineColor,fontSize:12,marginTop:4}}>{status ? onlineLabel : 'Checking…'}</p>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className={`btn btn-sm ${tab==='chat'?'btn-blue':'btn-ghost'}`} onClick={()=>setTab('chat')}>Chat</button>
+          <button className={`btn btn-sm ${tab==='hunt'?'btn-blue':'btn-ghost'}`} onClick={()=>setTab('hunt')}>Threat Hunt</button>
+        </div>
+      </div>
+
+      {tab === 'chat' && (
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:'0 40px 24px'}}>
+          <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:12,paddingBottom:8}}>
+            {messages.map((m, i) => (
+              <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+                <div style={{
+                  maxWidth:'75%', padding:'10px 14px', borderRadius:12,
+                  background: m.role==='user' ? '#0071e3' : m.blocked ? '#3a1a1a' : '#f0f0f5',
+                  color: m.role==='user' ? '#fff' : m.blocked ? '#ff6b6b' : '#1d1d1f',
+                  fontSize:14, lineHeight:1.5, whiteSpace:'pre-wrap', wordBreak:'break-word',
+                  borderBottomRightRadius: m.role==='user' ? 4 : 12,
+                  borderBottomLeftRadius:  m.role==='assistant' ? 4 : 12,
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {busy && (
+              <div style={{display:'flex',justifyContent:'flex-start'}}>
+                <div style={{padding:'10px 14px',borderRadius:12,background:'#f0f0f5',color:'#86868b',fontSize:13}}>
+                  <span className="spinner" style={{width:12,height:12,borderWidth:2,display:'inline-block',marginRight:8}} />
+                  Kerrigan is thinking…
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div style={{display:'flex',gap:8,marginTop:8,flexShrink:0}}>
+            <input
+              className="scan-input"
+              placeholder="Ask Kerrigan about CVEs, exploits, your system…"
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} }}
+              disabled={busy}
+            />
+            <button className="btn btn-blue" onClick={send} disabled={busy||!input.trim()}>
+              {busy ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'hunt' && (
+        <div className="sec" style={{paddingTop:0}}>
+          <div className="card" style={{padding:24}}>
+            <div className="sec-title">Threat Hunt</div>
+            <div className="sec-sub" style={{marginBottom:16}}>Scan a directory for hardcoded secrets, vulnerable C functions, backdoors, and malware indicators.</div>
+            <div style={{display:'flex',gap:8,marginBottom:16}}>
+              <input
+                className="scan-input"
+                placeholder="/path/to/scan  (e.g. ~/Desktop/kerrigan-fantasma)"
+                value={huntPath}
+                onChange={e=>setHuntPath(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter') runHunt(); }}
+              />
+              <button className="btn btn-blue" onClick={runHunt} disabled={huntBusy||!huntPath.trim()}>
+                {huntBusy ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : 'Scan'}
+              </button>
+            </div>
+            {huntRes && !huntRes.error && (
+              <div>
+                <div style={{display:'flex',gap:16,marginBottom:16}}>
+                  <div style={{flex:1,background:'#f5f5f7',borderRadius:10,padding:'14px 18px'}}>
+                    <div style={{fontSize:28,fontWeight:700,color:huntRes.risk_score>50?'#ff3b30':huntRes.risk_score>20?'#ff9f0a':'#34c759'}}>{huntRes.risk_score}</div>
+                    <div style={{fontSize:12,color:'#86868b',marginTop:2}}>Risk Score</div>
+                  </div>
+                  <div style={{flex:1,background:'#f5f5f7',borderRadius:10,padding:'14px 18px'}}>
+                    <div style={{fontSize:28,fontWeight:700,color:'#1d1d1f'}}>{huntRes.total}</div>
+                    <div style={{fontSize:12,color:'#86868b',marginTop:2}}>Total Findings</div>
+                  </div>
+                </div>
+                {huntRes.findings.length === 0 && <div style={{color:'#34c759',fontWeight:600}}>✅ No issues found</div>}
+                {huntRes.findings.map((f,i) => (
+                  <div key={i} style={{borderLeft:`3px solid ${f.severity==='critical'?'#ff3b30':f.severity==='high'?'#ff9f0a':'#ffcc00'}`,paddingLeft:12,marginBottom:10}}>
+                    <div style={{fontWeight:600,fontSize:13}}>{f.category.replace(/_/g,' ')} · <span style={{color:'#86868b',fontWeight:400}}>{f.file}:{f.line}</span></div>
+                    <div style={{fontFamily:'monospace',fontSize:12,color:'#3a3a3c',margin:'2px 0'}}>{f.snippet}</div>
+                    <div style={{fontSize:12,color:'#636366'}}>{f.description}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {huntRes?.error && <div style={{color:'#ff3b30',fontSize:13}}>{huntRes.error}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 function SettingsPage({ version }) {
   const [creds,   setCreds]   = useState({});
@@ -974,6 +1132,7 @@ function App() {
         {view === 'security'     && <SecurityPage     checks={checks} onRefresh={() => cg.getSecurityChecks().then(setChecks)} />}
         {view === 'processes'    && <ProcessesPage    processes={processes} onRefresh={() => cg.getProcesses().then(setProcesses)} />}
         {view === 'threats'      && <ThreatsPage      threats={threats} />}
+        {view === 'kerrigan'     && <KerriganPage />}
         {view === 'settings'     && <SettingsPage     version={version} />}
       </div>
     </div>
