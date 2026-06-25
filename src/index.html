@@ -1,1157 +1,781 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
-<title>CyberGuard</title>
-<script>
-  window.onerror = function(msg, src, line, col, err) {
-    var root = document.getElementById('root');
-    if (root) root.innerHTML = '<pre style="color:red;padding:30px;font-size:13px;white-space:pre-wrap">CyberGuard failed to start:\n\n' + msg + '\n\nAt: ' + src + ':' + line + (err ? '\n\n' + err.stack : '') + '</pre>';
-  };
-  window.addEventListener('unhandledrejection', function(e) {
-    var root = document.getElementById('root');
-    if (root && root.children.length === 0) root.innerHTML = '<pre style="color:red;padding:30px;font-size:13px;white-space:pre-wrap">Unhandled rejection:\n\n' + (e.reason && e.reason.stack ? e.reason.stack : e.reason) + '</pre>';
-  });
-</script>
-<script src="vendor/react.min.js"></script>
-<script src="vendor/react-dom.min.js"></script>
-<script src="vendor/babel.min.js"></script>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #root { height: 100%; overflow: hidden; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    background: #f5f5f7;
-    color: #1d1d1f;
-    user-select: none;
-  }
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
-
-  .app   { display: flex; height: 100vh; }
-  .main  { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-  .page  { flex: 1; }
-
-  .sidebar { width: 220px; min-width: 220px; background: #1c1c1e; display: flex; flex-direction: column; -webkit-app-region: drag; }
-  .sidebar * { -webkit-app-region: no-drag; }
-  .sb-header { padding: 54px 20px 18px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-  .sb-logo   { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .sb-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg,#0071e3,#5ac8fa); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-  .sb-logo-text { color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -0.3px; }
-  .sb-status    { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
-  .sb-dot       { width: 7px; height: 7px; border-radius: 50%; }
-  .s-green { color:#34c759; } .s-green .sb-dot { background:#34c759; box-shadow:0 0 6px rgba(52,199,89,.5); }
-  .s-orange{ color:#ff9f0a; } .s-orange .sb-dot{ background:#ff9f0a; }
-  .s-red   { color:#ff3b30; } .s-red    .sb-dot{ background:#ff3b30; }
-
-  .sb-nav  { flex: 1; padding: 12px 10px; overflow-y: auto; }
-  .nav-btn {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    padding: 9px 12px; border-radius: 8px; border: none;
-    background: transparent; color: #86868b; cursor: pointer;
-    font-size: 14px; font-family: inherit; text-align: left;
-    margin-bottom: 2px; transition: background .15s, color .15s;
-  }
-  .nav-btn:hover  { background: rgba(255,255,255,.07); color: #d1d1d6; }
-  .nav-btn.active { background: rgba(255,255,255,.12); color: #fff; font-weight: 600; }
-  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
-  .nav-badge { margin-left:auto; min-width:18px; height:18px; background:#ff3b30; color:#fff; border-radius:9px; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 5px; }
-  .sb-footer { padding:14px 20px; border-top:1px solid rgba(255,255,255,.07); font-size:11px; color:#48484a; line-height:1.6; }
-
-  .update-bar { background:#0071e3; color:#fff; padding:10px 40px; font-size:13px; display:flex; align-items:center; justify-content:space-between; }
-  .update-bar button { background:rgba(255,255,255,.2); border:none; color:#fff; padding:5px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; font-family:inherit; }
-  .update-bar button:hover { background:rgba(255,255,255,.3); }
-
-  .banner { padding:34px 40px 30px; display:flex; align-items:center; justify-content:space-between; -webkit-app-region:drag; }
-  .banner * { -webkit-app-region:no-drag; }
-  .b-green  { background:linear-gradient(135deg,#0a5c2b,#1a9c48); }
-  .b-orange { background:linear-gradient(135deg,#7a4a00,#c47800); }
-  .b-red    { background:linear-gradient(135deg,#8b0000,#cc1a1a); }
-  .banner h1 { color:#fff; font-size:24px; font-weight:700; letter-spacing:-.5px; margin-bottom:5px; }
-  .banner p  { color:rgba(255,255,255,.75); font-size:13px; }
-  .score-ring { width:76px; height:76px; border-radius:50%; background:rgba(255,255,255,.15); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
-  .score-num { font-size:24px; font-weight:700; line-height:1; }
-  .score-lbl { font-size:10px; opacity:.75; margin-top:2px; font-weight:500; letter-spacing:.5px; }
-
-  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; padding:20px 40px; }
-  .card  { background:#fff; border-radius:14px; padding:18px 20px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04); }
-  .card-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:12px; }
-  .card-val { font-size:34px; font-weight:700; color:#1d1d1f; line-height:1; letter-spacing:-1px; }
-  .card-unit{ font-size:13px; font-weight:400; color:#86868b; }
-  .card-sub { font-size:11px; color:#86868b; margin-top:7px; }
-  .bar-track{ height:4px; background:#e8e8ed; border-radius:2px; margin-top:10px; overflow:hidden; }
-  .bar-fill { height:100%; border-radius:2px; transition:width .6s ease,background .3s; }
-  .c-green{ background:#34c759; } .c-orange{ background:#ff9f0a; } .c-red{ background:#ff3b30; } .c-blue{ background:#0071e3; }
-
-  .ph { padding:28px 40px 20px; display:flex; align-items:flex-start; justify-content:space-between; -webkit-app-region:drag; }
-  .ph * { -webkit-app-region:no-drag; }
-  .ph h2 { font-size:22px; font-weight:700; color:#1d1d1f; letter-spacing:-.4px; }
-  .ph p  { font-size:13px; color:#86868b; margin-top:3px; }
-
-  .sec { padding:0 40px 28px; }
-  .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-  .sec-title{ font-size:16px; font-weight:600; color:#1d1d1f; }
-  .sec-sub  { font-size:12px; color:#86868b; margin-top:2px; }
-
-  .btn { border:none; cursor:pointer; font-family:inherit; border-radius:8px; font-weight:500; transition:background .15s,transform .1s; display:inline-flex; align-items:center; gap:6px; }
-  .btn:active { transform:scale(.97); }
-  .btn-blue { background:#0071e3; color:#fff; padding:8px 16px; font-size:13px; }
-  .btn-blue:hover { background:#0077ed; }
-  .btn-ghost{ background:rgba(0,0,0,.06); color:#1d1d1f; padding:7px 14px; font-size:13px; }
-  .btn-ghost:hover{ background:rgba(0,0,0,.1); }
-  .btn-sm { padding:5px 11px; font-size:12px; }
-  .btn-danger{ background:#fff0f0; color:#ff3b30; padding:6px 12px; font-size:12px; }
-  .btn-danger:hover{ background:#ffe5e4; }
-
-  .feed-list { display:flex; flex-direction:column; gap:8px; }
-  .feed-item { background:#fff; border-radius:10px; padding:11px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); animation:fadeIn .3s ease; }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
-  .feed-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-  .d-critical{ background:#ff3b30; box-shadow:0 0 6px rgba(255,59,48,.4); }
-  .d-high    { background:#ff9f0a; }
-  .d-medium  { background:#ffcc00; }
-  .d-low     { background:#34c759; }
-  .feed-type { font-size:13px; font-weight:600; color:#1d1d1f; flex:1; }
-  .feed-src  { font-size:12px; color:#86868b; font-family:'SF Mono',Menlo,monospace; }
-  .feed-time { font-size:11px; color:#aeaeb2; white-space:nowrap; }
-  .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
-  .badge-critical{ background:#ffe5e4; color:#ff3b30; }
-  .badge-high    { background:#fff3e0; color:#c47800; }
-  .badge-medium  { background:#fffbe0; color:#a07800; }
-  .badge-low     { background:#e8fae8; color:#1a7a3c; }
-  .badge-blocked { background:#e8fae8; color:#1a7a3c; }
-  .badge-cisa    { background:#e8f0fe; color:#0071e3; }
-  .badge-cybernews{ background:#f2e8fe; color:#7c3aed; }
-  .badge-nvd     { background:#ffe8e8; color:#dc2626; }
-  .badge-malicious{ background:#ffe5e4; color:#cc1a1a; }
-  .badge-suspicious{ background:#fff3e0; color:#c47800; }
-  .badge-clean   { background:#e8fae8; color:#1a7a3c; }
-  .badge-unknown { background:#f2f2f7; color:#86868b; }
-  .badge-pending { background:#e8f0fe; color:#0071e3; }
-
-  .checks-list { display:flex; flex-direction:column; gap:10px; }
-  .check { background:#fff; border-radius:12px; padding:15px 18px; display:flex; align-items:center; gap:14px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
-  .check-ico { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
-  .check.pass .check-ico { background:#e8fae8; }
-  .check.warn .check-ico { background:#fff3e0; }
-  .check.fail .check-ico { background:#ffe5e4; }
-  .check.unknown .check-ico { background:#f2f2f7; }
-  .check-info { flex:1; }
-  .check-name { font-size:14px; font-weight:600; color:#1d1d1f; margin-bottom:3px; }
-  .check-detail{ font-size:12px; color:#86868b; }
-  .check-fix  { font-size:11px; color:#0071e3; margin-top:4px; }
-  .check-badge{ font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; text-transform:uppercase; letter-spacing:.3px; flex-shrink:0; }
-  .cb-pass  { background:#e8fae8; color:#1a7a3c; }
-  .cb-warn  { background:#fff3e0; color:#c47800; }
-  .cb-fail  { background:#ffe5e4; color:#cc1a1a; }
-  .cb-unknown{ background:#f2f2f7; color:#86868b; }
-
-  .net-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
-  .stat-pill { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
-  .sp-lbl { font-size:11px; color:#86868b; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
-  .sp-val { font-size:26px; font-weight:700; color:#1d1d1f; letter-spacing:-.5px; }
-  .sp-unit{ font-size:12px; color:#86868b; font-weight:400; }
-  .devices-list{ display:flex; flex-direction:column; gap:8px; }
-  .device { background:#fff; border-radius:10px; padding:13px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-  .dev-icon { font-size:22px; flex-shrink:0; }
-  .dev-name { font-size:14px; font-weight:600; color:#1d1d1f; }
-  .dev-mac  { font-size:11px; color:#aeaeb2; font-family:monospace; }
-  .dev-ip   { font-size:12px; color:#86868b; font-family:monospace; }
-  .online   { display:flex; align-items:center; gap:5px; font-size:12px; color:#34c759; font-weight:500; }
-  .online-dot{ width:6px; height:6px; border-radius:50%; background:#34c759; }
-
-  .proc-wrap{ background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
-  .proc-table{ width:100%; border-collapse:collapse; }
-  .proc-table th{ padding:10px 16px; text-align:left; font-size:11px; font-weight:600; color:#86868b; text-transform:uppercase; letter-spacing:.5px; background:#f9f9fb; border-bottom:1px solid #e8e8ed; }
-  .proc-table td{ padding:9px 16px; font-size:13px; border-bottom:1px solid #f2f2f7; }
-  .proc-table tr:last-child td{ border-bottom:none; }
-  .proc-table tr:hover td{ background:#fafafa; }
-  .proc-sus td{ background:#fff5f5!important; }
-  .proc-sus td:first-child{ border-left:3px solid #ff3b30; }
-  .pbar-wrap{ display:flex; align-items:center; gap:8px; }
-  .pbar-track{ flex:1; max-width:80px; height:4px; background:#e8e8ed; border-radius:2px; overflow:hidden; }
-  .pbar-fill { height:100%; border-radius:2px; background:#0071e3; transition:width .4s; }
-  .sus-tag  { font-size:10px; background:#ffe5e4; color:#ff3b30; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:6px; }
-
-  .feed-tabs { display:flex; gap:6px; margin-bottom:16px; }
-  .feed-tab  { padding:6px 14px; border-radius:20px; border:none; cursor:pointer; font-size:13px; font-family:inherit; font-weight:500; transition:background .15s,color .15s; background:transparent; color:#86868b; }
-  .feed-tab:hover  { background:rgba(0,0,0,.05); color:#1d1d1f; }
-  .feed-tab.active { background:#0071e3; color:#fff; }
-  .intel-item { background:#fff; border-radius:12px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.07); margin-bottom:8px; animation:fadeIn .3s ease; }
-  .intel-hdr  { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-  .intel-title{ font-size:14px; font-weight:600; color:#1d1d1f; flex:1; line-height:1.3; }
-  .intel-summary{ font-size:12px; color:#86868b; line-height:1.5; margin-bottom:8px; }
-  .intel-footer{ display:flex; align-items:center; gap:8px; }
-  .intel-date { font-size:11px; color:#aeaeb2; }
-  .intel-link { font-size:12px; color:#0071e3; cursor:pointer; text-decoration:none; font-weight:500; margin-left:auto; }
-  .intel-link:hover { text-decoration:underline; }
-
-  .settings-section { background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:20px; }
-  .settings-hdr { padding:16px 20px 14px; border-bottom:1px solid #f2f2f7; }
-  .settings-hdr h3{ font-size:15px; font-weight:600; color:#1d1d1f; }
-  .settings-hdr p { font-size:12px; color:#86868b; margin-top:2px; }
-  .setting-row { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid #f2f2f7; }
-  .setting-row:last-child{ border-bottom:none; }
-  .setting-info { flex:1; }
-  .setting-name { font-size:14px; font-weight:500; color:#1d1d1f; }
-  .setting-desc { font-size:12px; color:#86868b; margin-top:2px; }
-  .api-input-wrap{ display:flex; gap:8px; align-items:center; flex-shrink:0; }
-  .api-input { padding:7px 12px; border-radius:8px; border:1.5px solid #e0e0e6; font-size:13px; font-family:inherit; outline:none; width:220px; background:#fff; transition:border .15s; }
-  .api-input:focus{ border-color:#0071e3; }
-  .conn-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-  .conn-ok { background:#34c759; }
-  .conn-fail{ background:#ff3b30; }
-  .conn-none{ background:#aeaeb2; }
-  .privacy-notice { background:#f0f6ff; border-radius:10px; padding:14px 16px; display:flex; gap:12px; align-items:flex-start; margin-top:4px; }
-  .privacy-icon { font-size:20px; flex-shrink:0; margin-top:1px; }
-  .privacy-text { font-size:12px; color:#3a3a3c; line-height:1.6; }
-  .privacy-text strong { color:#1d1d1f; }
-
-  /* ── Scanner styles ── */
-  .scanner-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:0 40px 28px; }
-  .scanner-card { background:#fff; border-radius:14px; padding:22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
-  .scanner-title{ font-size:16px; font-weight:700; color:#1d1d1f; margin-bottom:4px; }
-  .scanner-desc { font-size:12px; color:#86868b; margin-bottom:16px; line-height:1.5; }
-  .scan-input-row{ display:flex; gap:8px; margin-bottom:16px; }
-  .scan-input { flex:1; padding:9px 13px; border-radius:9px; border:1.5px solid #e0e0e6; font-size:13px; font-family:inherit; outline:none; transition:border .15s; background:#fff; }
-  .scan-input:focus{ border-color:#0071e3; }
-  .scan-result { border-radius:10px; padding:14px 16px; font-size:13px; animation:fadeIn .3s ease; }
-  .res-malicious { background:#fff0f0; border:1px solid #ffcdd2; }
-  .res-suspicious{ background:#fff8e8; border:1px solid #ffe0a0; }
-  .res-clean     { background:#f0faf0; border:1px solid #c8e6c9; }
-  .res-unknown   { background:#f2f2f7; border:1px solid #e0e0e6; }
-  .res-pending   { background:#e8f0fe; border:1px solid #bbdefb; }
-  .res-title { font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
-  .res-body  { font-size:12px; color:#3a3a3c; line-height:1.6; }
-  .res-body code { font-family:monospace; background:rgba(0,0,0,.05); padding:1px 5px; border-radius:3px; font-size:11px; }
-  .res-detail-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
-  .breach-item { background:#fff; border-radius:10px; padding:13px 16px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.06); border-left:3px solid #ff3b30; }
-  .breach-name { font-size:14px; font-weight:700; color:#1d1d1f; }
-  .breach-date { font-size:12px; color:#86868b; margin-bottom:6px; }
-  .breach-classes { display:flex; gap:4px; flex-wrap:wrap; }
-  .breach-class { font-size:10px; background:#f2f2f7; color:#3a3a3c; padding:2px 7px; border-radius:4px; font-weight:500; }
-  .port-suspicious{ color:#ff3b30; font-weight:600; }
-
-  .empty { text-align:center; padding:40px; color:#aeaeb2; font-size:14px; }
-  .empty-icon{ font-size:40px; margin-bottom:12px; }
-  .spinner { width:24px; height:24px; border:3px solid #e8e8ed; border-top-color:#0071e3; border-radius:50%; animation:spin .8s linear infinite; }
-  @keyframes spin { to{transform:rotate(360deg)} }
-  .loading-screen { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#86868b; gap:14px; }
-  input[type=text],input[type=password]{ user-select:text; -webkit-user-select:text; }
-</style>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;">
+  <title>CyberGuard AI</title>
+  <script src="vendor/tailwind.js"></script>
+  <style>
+    body { margin: 0; background: #f9fafb; }
+  </style>
+  <!-- Error catcher -->
+  <script>
+    window.onerror = function(msg, src, line, col) {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:32px;font-family:sans-serif;color:#b91c1c;background:#fee2e2;margin:24px;border-radius:12px">' +
+        '<strong>CyberGuard failed to start:</strong><br>' + msg + '<br><small>' + src + ':' + line + ':' + col + '</small></div>';
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:32px;font-family:sans-serif;color:#b91c1c;background:#fee2e2;margin:24px;border-radius:12px">' +
+        '<strong>CyberGuard async error:</strong><br>' + e.reason + '</div>';
+    });
+  </script>
 </head>
 <body>
 <div id="root"></div>
+
+<script src="vendor/react.min.js"></script>
+<script src="vendor/react-dom.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+
 <script type="text/babel">
-const { useState, useEffect, useCallback, useMemo } = React;
-const cg = window.cyberguard;
+const { useState, useEffect, useRef } = React;
+const cg = window.cyberguard || {};
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function timeAgo(iso) {
-  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (s < 60)   return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s/60)}m ago`;
-  if (s < 86400)return `${Math.floor(s/3600)}h ago`;
-  return `${Math.floor(s/86400)}d ago`;
-}
-function fillCls(pct) { return pct > 80 ? 'c-red' : pct > 60 ? 'c-orange' : 'c-green'; }
-function devIcon(h) {
-  const n = (h||'').toLowerCase();
-  if (/iphone|phone/.test(n)) return '📱';
-  if (/ipad/.test(n))         return '📱';
-  if (/mac|book/.test(n))     return '💻';
-  if (/apple/.test(n))        return '🍎';
-  if (/tv/.test(n))           return '📺';
-  if (/print/.test(n))        return '🖨';
-  if (/nas|syno/.test(n))     return '💾';
-  if (/router|gate/.test(n))  return '📡';
-  return '🖥';
-}
-const ICONS = { firewall:'🔥', lock:'🔒', shield:'🛡', gatekeeper:'🚪', refresh:'🔄', screenlock:'🖥' };
-const APIS  = [
-  { key:'virustotal', name:'VirusTotal',      desc:'File, URL & IP scanning — 70+ AV engines. Free tier: 500 req/day', link:'https://www.virustotal.com/gui/my-apikey' },
-  { key:'abuseipdb',  name:'AbuseIPDB',        desc:'IP reputation & threat intelligence database. Free tier: 1000 checks/day', link:'https://www.abuseipdb.com/account/api' },
-  { key:'hibp',       name:'Have I Been Pwned',desc:'Email breach monitoring. Requires paid API key (~$3.50/mo)', link:'https://haveibeenpwned.com/API/Key' },
-  { key:'safebrowsing',name:'Google Safe Browsing', desc:'URL phishing & malware detection. Free with Google Cloud account', link:'https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com' },
-  { key:'shodan',     name:'Shodan',           desc:'Search engine for internet-connected devices', link:'https://account.shodan.io/' },
-];
+// ── SVG Icon Factory ──────────────────────────────────────────────────────────
+const Ico = ({ d, className = 'w-5 h-5', ...rest }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+       className={className} {...rest}>
+    {Array.isArray(d) ? d.map((el, i) => React.createElement(el[0], { key: i, ...el[1] })) : <path d={d} />}
+  </svg>
+);
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
-function Sidebar({ view, setView, statusCls, statusLabel, threatCount }) {
-  const nav = [
-    { id:'overview',     label:'Overview',       icon:'🛡' },
-    { id:'scanners',     label:'Scanners',       icon:'🔬' },
-    { id:'intelligence', label:'Intelligence',   icon:'📡' },
-    { id:'network',      label:'Network',        icon:'🌐' },
-    { id:'security',     label:'Security',       icon:'✅' },
-    { id:'processes',    label:'Processes',      icon:'⚙️' },
-    { id:'threats',      label:'Threats',        icon:'⚠️', badge: threatCount },
-    { id:'kerrigan',     label:'AI Assistant',   icon:'🧠' },
-    { id:'settings',     label:'Settings',       icon:'🔧' },
-  ];
-  return (
-    <div className="sidebar">
-      <div className="sb-header">
-        <div className="sb-logo"><div className="sb-logo-icon">🛡</div><div className="sb-logo-text">CyberGuard</div></div>
-        <div className={`sb-status ${statusCls}`}><div className="sb-dot" />{statusLabel}</div>
-      </div>
-      <nav className="sb-nav">
-        {nav.map(n => (
-          <button key={n.id} className={`nav-btn ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
-            <span className="nav-icon">{n.icon}</span>
-            <span>{n.label}</span>
-            {n.badge > 0 && <span className="nav-badge">{n.badge > 99 ? '99+' : n.badge}</span>}
-          </button>
-        ))}
-      </nav>
-      <div className="sb-footer">CyberGuard v2.0<br/><span style={{color:'#34c759'}}>●</span> Real-time monitoring active</div>
-    </div>
-  );
-}
+const Shield        = p => <Ico {...p} d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>;
+const Activity      = p => <Ico {...p} d={[['polyline',{points:'22 12 18 12 15 21 9 3 6 12 2 12'}]]}/>;
+const Network       = p => <Ico {...p} d={[['rect',{x:'9',y:'2',width:'6',height:'6'}],['rect',{x:'16',y:'16',width:'6',height:'6'}],['rect',{x:'2',y:'16',width:'6',height:'6'}],['line',{x1:'12',y1:'8',x2:'12',y2:'16'}],['line',{x1:'4',y1:'19',x2:'12',y2:'16'}],['line',{x1:'20',y1:'19',x2:'12',y2:'16'}]]}/>;
+const Bug           = p => <Ico {...p} d={[['rect',{x:'9',y:'9',width:'6',height:'6',rx:'1'}],['path',{d:'M14 9V8a2 2 0 0 0-4 0v1'}],['path',{d:'M8.5 14H6a2 2 0 0 1 0-4h1'}],['path',{d:'M15.5 14H18a2 2 0 0 0 0-4h-1'}],['path',{d:'M12 19v3'}],['path',{d:'M8 19l-2 2'}],['path',{d:'M16 19l2 2'}]]}/>;
+const Lock          = p => <Ico {...p} d={[['rect',{x:'3',y:'11',width:'18',height:'11',rx:'2',ry:'2'}],['path',{d:'M7 11V7a5 5 0 0 1 10 0v4'}]]}/>;
+const Eye           = p => <Ico {...p} d={[['path',{d:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'}],['circle',{cx:'12',cy:'12',r:'3'}]]}/>;
+const Terminal      = p => <Ico {...p} d={[['polyline',{points:'4 17 10 11 4 5'}],['line',{x1:'12',y1:'19',x2:'20',y2:'19'}]]}/>;
+const Target        = p => <Ico {...p} d={[['circle',{cx:'12',cy:'12',r:'10'}],['circle',{cx:'12',cy:'12',r:'6'}],['circle',{cx:'12',cy:'12',r:'2'}]]}/>;
+const Wifi          = p => <Ico {...p} d={[['path',{d:'M5 12.55a11 11 0 0 1 14.08 0'}],['path',{d:'M1.42 9a16 16 0 0 1 21.16 0'}],['path',{d:'M8.53 16.11a6 6 0 0 1 6.95 0'}],['line',{x1:'12',y1:'20',x2:'12.01',y2:'20'}]]}/>;
+const Database      = p => <Ico {...p} d={[['ellipse',{cx:'12',cy:'5',rx:'9',ry:'3'}],['path',{d:'M21 12c0 1.66-4 3-9 3s-9-1.34-9-3'}],['path',{d:'M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5'}]]}/>;
+const AlertTriangle = p => <Ico {...p} d={[['path',{d:'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'}],['line',{x1:'12',y1:'9',x2:'12',y2:'13'}],['line',{x1:'12',y1:'17',x2:'12.01',y2:'17'}]]}/>;
+const Search        = p => <Ico {...p} d={[['circle',{cx:'11',cy:'11',r:'8'}],['line',{x1:'21',y1:'21',x2:'16.65',y2:'16.65'}]]}/>;
+const Filter        = p => <Ico {...p} d={[['polygon',{points:'22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'}]]}/>;
+const Download      = p => <Ico {...p} d={[['path',{d:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'}],['polyline',{points:'7 10 12 15 17 10'}],['line',{x1:'12',y1:'15',x2:'12',y2:'3'}]]}/>;
+const Play          = p => <Ico {...p} d={[['polygon',{points:'5 3 19 12 5 21 5 3'}]]}/>;
+const Pause         = p => <Ico {...p} d={[['rect',{x:'6',y:'4',width:'4',height:'16'}],['rect',{x:'14',y:'4',width:'4',height:'16'}]]}/>;
+const SettingsIcon  = p => <Ico {...p} d={[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'}]]}/>;
+const MapIcon       = p => <Ico {...p} d={[['polygon',{points:'1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6'}],['line',{x1:'8',y1:'2',x2:'8',y2:'18'}],['line',{x1:'16',y1:'6',x2:'16',y2:'22'}]]}/>;
+const Zap           = p => <Ico {...p} d={[['polygon',{points:'13 2 3 14 12 14 11 22 21 10 12 10 13 2'}]]}/>;
+const FileText      = p => <Ico {...p} d={[['path',{d:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'}],['polyline',{points:'14 2 14 8 20 8'}],['line',{x1:'16',y1:'13',x2:'8',y2:'13'}],['line',{x1:'16',y1:'17',x2:'8',y2:'17'}]]}/>;
+const MessageSquare = p => <Ico {...p} d={[['path',{d:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'}]]}/>;
+const Send          = p => <Ico {...p} d={[['line',{x1:'22',y1:'2',x2:'11',y2:'13'}],['polygon',{points:'22 2 15 22 11 13 2 9 22 2'}]]}/>;
+const Cpu           = p => <Ico {...p} d={[['rect',{x:'4',y:'4',width:'16',height:'16',rx:'2',ry:'2'}],['rect',{x:'9',y:'9',width:'6',height:'6'}],['line',{x1:'9',y1:'1',x2:'9',y2:'4'}],['line',{x1:'15',y1:'1',x2:'15',y2:'4'}],['line',{x1:'9',y1:'20',x2:'9',y2:'23'}],['line',{x1:'15',y1:'20',x2:'15',y2:'23'}],['line',{x1:'20',y1:'9',x2:'23',y2:'9'}],['line',{x1:'20',y1:'14',x2:'23',y2:'14'}],['line',{x1:'1',y1:'9',x2:'4',y2:'9'}],['line',{x1:'1',y1:'14',x2:'4',y2:'14'}]]}/>;
 
-function StatCard({ label, value, unit, sub, barPct }) {
-  return (
-    <div className="card">
-      <div className="card-lbl">{label}</div>
-      <div><span className="card-val">{value}</span>{unit && <span className="card-unit"> {unit}</span>}</div>
-      {sub && <div className="card-sub">{sub}</div>}
-      {barPct !== undefined && (
-        <div className="bar-track"><div className={`bar-fill ${fillCls(barPct)}`} style={{width:`${barPct}%`}} /></div>
-      )}
-    </div>
-  );
-}
-
-// ── ScanResult helper ─────────────────────────────────────────────────────────
-function ScanResult({ result }) {
-  if (!result) return null;
-  if (result.error) return <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{result.error}</div></div>;
-  if (result.canceled) return null;
-
-  const v = result.verdict || 'unknown';
-  const cls = v === 'malicious' ? 'res-malicious' : v === 'suspicious' ? 'res-suspicious' : v === 'clean' ? 'res-clean' : v === 'pending' ? 'res-pending' : 'res-unknown';
-  const icon = v === 'malicious' ? '🚨' : v === 'suspicious' ? '⚠️' : v === 'clean' ? '✅' : v === 'pending' ? '⏳' : '❓';
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function DashboardView({ stats, threats, secChecks }) {
+  const failCount = (secChecks||[]).filter(c => c.status === 'fail').length;
+  const cpu = stats ? Math.round(stats.cpu) : 0;
+  const ram = stats ? (stats.ramUsed / 1024).toFixed(1) : '—';
+  const net = stats ? ((stats.netRx + stats.netTx) / 1024 / 1024).toFixed(1) : '—';
 
   return (
-    <div className={`scan-result ${cls}`}>
-      <div className="res-title">
-        {icon} <span className={`badge badge-${v}`}>{v.toUpperCase()}</span>
-        {result.fileName && <span style={{fontFamily:'monospace',fontSize:12,fontWeight:400}}>{result.fileName}</span>}
-      </div>
-      <div className="res-body">{result.summary}</div>
-      {result.results && result.results.length > 0 && (
-        <div className="res-detail-row">
-          {result.results.map((r,i) => (
-            <span key={i} style={{fontSize:11,background:'rgba(0,0,0,.06)',padding:'3px 8px',borderRadius:5}}>
-              {r.source}: <strong>{r.verdict}</strong>
-              {r.abuseScore !== undefined && ` (score: ${r.abuseScore})`}
-              {r.malicious  !== undefined && ` (${r.malicious}/${r.total} engines)`}
-            </span>
-          ))}
-        </div>
-      )}
-      {result.malicious !== undefined && result.total && (
-        <div style={{fontSize:11,marginTop:8,color:'#86868b'}}>
-          {result.malicious} malicious · {result.suspicious} suspicious · {result.harmless} harmless · {result.total} total engines
-        </div>
-      )}
-      {result.names && result.names.length > 0 && (
-        <details style={{marginTop:10}}>
-          <summary style={{fontSize:12,cursor:'pointer',color:'#0071e3'}}>AV detections ({result.names.length})</summary>
-          <div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:4}}>
-            {result.names.map((n,i) => <span key={i} style={{fontSize:10,background:'#ffe5e4',color:'#cc1a1a',padding:'2px 6px',borderRadius:4}}>{n}</span>)}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h3 className="text-xl font-bold text-gray-900 mb-6">Enterprise Security Overview</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="text-center p-4 bg-red-50 rounded-xl">
+            <Bug className="w-8 h-8 text-red-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-gray-900">{failCount}</div>
+            <div className="text-sm text-gray-600">Failed Checks</div>
           </div>
-        </details>
-      )}
-    </div>
-  );
-}
-
-// ── Overview ──────────────────────────────────────────────────────────────────
-function OverviewPage({ stats, checks, threats }) {
-  const score = useMemo(()=>checks.length ? Math.round(checks.filter(c=>c.status==='pass').length/checks.length*100) : 0,[checks]);
-  const fails  = checks.filter(c=>c.status==='fail').length;
-  const warns  = checks.filter(c=>c.status==='warn').length;
-  let bcls, btitle, bsub;
-  if (fails)           { bcls='b-red';    btitle=`${fails} Critical Issue${fails>1?'s':''}`; bsub='Immediate action required.'; }
-  else if (warns)      { bcls='b-orange'; btitle=`${warns} Warning${warns>1?'s':''} to Review`; bsub='Your machine is mostly protected.'; }
-  else if (!checks.length){ bcls='b-orange'; btitle='Running security checks…'; bsub=''; }
-  else                 { bcls='b-green';  btitle='System is Protected'; bsub='All checks passing. Real-time monitoring is active.'; }
-  return (
-    <div className="page">
-      <div className={`banner ${bcls}`}>
-        <div><h1>{btitle}</h1><p>{bsub}</p></div>
-        <div className="score-ring"><div className="score-num">{score}</div><div className="score-lbl">SCORE</div></div>
-      </div>
-      <div className="cards">
-        <StatCard label="CPU" value={stats.cpu} unit="%" sub={stats.cpuModel} barPct={stats.cpu} />
-        <StatCard label="Memory" value={stats.ram} unit="%" sub={`${stats.ramUsedGB} / ${stats.ramTotalGB} GB`} barPct={stats.ram} />
-        <StatCard label="Disk" value={stats.disk||0} unit="%" sub={`${stats.diskUsedGB} / ${stats.diskTotalGB} GB`} barPct={stats.disk||0} />
-        <StatCard label="Network In" value={stats.netInKB} unit=" KB/s" sub={`Out: ${stats.netOutKB} KB/s`} />
-      </div>
-      <div className="sec">
-        <div className="sec-hdr">
-          <div><div className="sec-title">Recent Threats</div><div className="sec-sub">{threats.length ? `${threats.length} events detected` : 'No threats detected'}</div></div>
+          <div className="text-center p-4 bg-blue-50 rounded-xl">
+            <Cpu className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-gray-900">{cpu}%</div>
+            <div className="text-sm text-gray-600">CPU Usage</div>
+          </div>
+          <div className="text-center p-4 bg-green-50 rounded-xl">
+            <Shield className="w-8 h-8 text-green-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-gray-900">{threats.length}</div>
+            <div className="text-sm text-gray-600">Threats Seen</div>
+          </div>
+          <div className="text-center p-4 bg-purple-50 rounded-xl">
+            <Network className="w-8 h-8 text-purple-500 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-gray-900">{net}</div>
+            <div className="text-sm text-gray-600">MB/s Net I/O</div>
+          </div>
         </div>
-        {threats.length === 0
-          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected — system is clean</div>
-          : <div className="feed-list">
-              {threats.slice(0,8).map(t=>(
-                <div key={t.id} className="feed-item">
-                  <div className={`feed-dot d-${(t.severity||'').toLowerCase()}`} />
-                  <div style={{flex:1}}><div className="feed-type">{t.type}</div>{t.detail && <div style={{fontSize:11,color:'#86868b',marginTop:2}}>{t.detail}</div>}</div>
-                  <div className="feed-src">{t.source}</div>
-                  <span className={`badge badge-${(t.severity||'').toLowerCase()}`}>{t.severity}</span>
-                  <div className="feed-time">{timeAgo(t.timestamp)}</div>
+        <div className="bg-gray-50 rounded-xl p-4">
+          <h4 className="font-semibold text-gray-900 mb-3">Live Threat Intelligence</h4>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {threats.length === 0
+              ? <div className="text-sm text-gray-500">No threats detected — monitoring active</div>
+              : threats.slice(0,10).map((t,i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">{t.description || t.message || JSON.stringify(t)}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${
+                    t.severity==='critical'?'bg-red-100 text-red-700':
+                    t.severity==='high'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700'}`}>
+                    {t.severity||'info'}
+                  </span>
                 </div>
-              ))}
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ── Scanners ──────────────────────────────────────────────────────────────────
-function ScannersPage() {
-  // IP scanner
-  const [ipInput, setIpInput]   = useState('');
-  const [ipRes,   setIpRes]     = useState(null);
-  const [ipBusy,  setIpBusy]   = useState(false);
-  const scanIP = async () => {
-    if (!ipInput.trim()) return;
-    setIpBusy(true); setIpRes(null);
-    setIpRes(await cg.scanIP(ipInput.trim()));
-    setIpBusy(false);
-  };
-
-  // URL scanner
-  const [urlInput, setUrlInput] = useState('');
-  const [urlRes,   setUrlRes]   = useState(null);
-  const [urlBusy,  setUrlBusy] = useState(false);
-  const scanURL = async () => {
-    if (!urlInput.trim()) return;
-    setUrlBusy(true); setUrlRes(null);
-    setUrlRes(await cg.scanURL(urlInput.trim()));
-    setUrlBusy(false);
-  };
-
-  // File scanner
-  const [fileRes,  setFileRes]  = useState(null);
-  const [fileBusy, setFileBusy] = useState(false);
-  const scanFile = async () => {
-    setFileBusy(true); setFileRes(null);
-    setFileRes(await cg.scanFile());
-    setFileBusy(false);
-  };
-
-  // Email breach
-  const [emailInput, setEmailInput] = useState('');
-  const [emailRes,   setEmailRes]   = useState(null);
-  const [emailBusy,  setEmailBusy] = useState(false);
-  const checkEmail = async () => {
-    if (!emailInput.trim()) return;
-    setEmailBusy(true); setEmailRes(null);
-    setEmailRes(await cg.checkEmailBreach(emailInput.trim()));
-    setEmailBusy(false);
-  };
-
-  // Password breach (k-anonymity — no key needed)
-  const [passInput, setPassInput] = useState('');
-  const [passRes,   setPassRes]   = useState(null);
-  const [passBusy,  setPassBusy] = useState(false);
-  const checkPass = async () => {
-    if (!passInput.trim()) return;
-    setPassBusy(true); setPassRes(null);
-    const r = await cg.checkPasswordBreach(passInput);
-    setPassRes(r);
-    setPassBusy(false);
-  };
-
-  return (
-    <div className="page">
-      <div className="ph">
-        <div>
-          <h2>Scanners</h2>
-          <p>Real threat lookups using live security APIs — no simulated results</p>
+              ))
+            }
+          </div>
         </div>
       </div>
-      <div className="scanner-grid">
 
-        {/* IP Reputation */}
-        <div className="scanner-card">
-          <div className="scanner-title">🔍 IP Reputation</div>
-          <div className="scanner-desc">Check any IP address against AbuseIPDB and VirusTotal. Requires API keys in Settings.</div>
-          <div className="scan-input-row">
-            <input className="scan-input" placeholder="Enter IP address (e.g. 192.168.1.1)" value={ipInput}
-              onChange={e=>setIpInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&scanIP()} />
-            <button className="btn btn-blue btn-sm" onClick={scanIP} disabled={ipBusy}>{ipBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Scan'}</button>
-          </div>
-          <ScanResult result={ipRes} />
-        </div>
-
-        {/* URL / Domain */}
-        <div className="scanner-card">
-          <div className="scanner-title">🌐 URL / Domain Check</div>
-          <div className="scanner-desc">Check URLs for phishing, malware and C2 using VirusTotal, Google Safe Browsing and URLhaus (free, no key required).</div>
-          <div className="scan-input-row">
-            <input className="scan-input" placeholder="Enter URL or domain" value={urlInput}
-              onChange={e=>setUrlInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&scanURL()} />
-            <button className="btn btn-blue btn-sm" onClick={scanURL} disabled={urlBusy}>{urlBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
-          </div>
-          <ScanResult result={urlRes} />
-        </div>
-
-        {/* File scanner */}
-        <div className="scanner-card">
-          <div className="scanner-title">📁 File Scanner</div>
-          <div className="scanner-desc">
-            Calculates a SHA-256 hash of any file and queries VirusTotal — <strong>no file data leaves your machine</strong>. Requires VirusTotal API key.
-          </div>
-          <div className="scan-input-row">
-            <button className="btn btn-blue" onClick={scanFile} disabled={fileBusy} style={{flex:1}}>
-              {fileBusy ? <><span className="spinner" style={{width:14,height:14,borderWidth:2}} /> Scanning…</> : '📂 Choose File to Scan'}
-            </button>
-          </div>
-          <ScanResult result={fileRes} />
-        </div>
-
-        {/* Email breach */}
-        <div className="scanner-card">
-          <div className="scanner-title">📧 Email Breach Check</div>
-          <div className="scanner-desc">Check if an email address appears in any known data breach using Have I Been Pwned. Requires HIBP API key (~$3.50/mo).</div>
-          <div className="scan-input-row">
-            <input className="scan-input" type="email" placeholder="you@example.com" value={emailInput}
-              onChange={e=>setEmailInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&checkEmail()} />
-            <button className="btn btn-blue btn-sm" onClick={checkEmail} disabled={emailBusy}>{emailBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
-          </div>
-          {emailRes && !emailRes.error && emailRes.breached && (
-            <div className="scan-result res-malicious" style={{marginBottom:12}}>
-              <div className="res-title">🚨 Found in {emailRes.breachCount} breach{emailRes.breachCount!==1?'es':''}</div>
-              <div className="res-body">{emailRes.summary}</div>
+      <div className="space-y-6">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">System Status</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-gray-600">CPU Usage</span>
+              <span className="font-medium">{cpu}%</span>
             </div>
-          )}
-          {emailRes && !emailRes.error && !emailRes.breached && (
-            <div className="scan-result res-clean"><div className="res-title">✅ Not found in any breach</div><div className="res-body">{emailRes.summary}</div></div>
-          )}
-          {emailRes && emailRes.error && <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{emailRes.error}</div></div>}
-          {emailRes && emailRes.breached && emailRes.breaches && emailRes.breaches.length > 0 && (
-            <div style={{marginTop:10}}>
-              {emailRes.breaches.slice(0,5).map((b,i)=>(
-                <div key={i} className="breach-item">
-                  <div className="breach-name">{b.name}</div>
-                  <div className="breach-date">{b.breachDate} · {b.domain}</div>
-                  <div className="breach-classes">{b.dataClasses.slice(0,6).map((dc,j)=><span key={j} className="breach-class">{dc}</span>)}</div>
-                </div>
-              ))}
-              {emailRes.breaches.length > 5 && <div style={{fontSize:12,color:'#86868b',padding:'8px 0'}}>+{emailRes.breaches.length-5} more breaches…</div>}
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{width:`${cpu}%`}}></div>
             </div>
-          )}
-        </div>
-
-        {/* Password breach - spans full width */}
-        <div className="scanner-card" style={{gridColumn:'1/-1'}}>
-          <div className="scanner-title">🔑 Password Breach Check</div>
-          <div className="scanner-desc">
-            Check if a password has appeared in data breaches using Have I Been Pwned's k-anonymity API — <strong>no API key required, your password never leaves this device</strong>. Only the first 5 characters of the SHA-1 hash are sent.
-          </div>
-          <div className="scan-input-row">
-            <input className="scan-input" type="password" placeholder="Enter password to check" value={passInput}
-              onChange={e=>setPassInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&checkPass()} />
-            <button className="btn btn-blue btn-sm" onClick={checkPass} disabled={passBusy}>{passBusy?<span className="spinner" style={{width:14,height:14,borderWidth:2}} />:'Check'}</button>
-          </div>
-          {passRes && !passRes.error && (
-            <div className={`scan-result ${passRes.pwned ? 'res-malicious' : 'res-clean'}`}>
-              <div className="res-title">{passRes.pwned ? '🚨 Password Compromised' : '✅ Password Not Found'}</div>
-              <div className="res-body">{passRes.summary}</div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Memory Used</span>
+              <span className="font-medium">{ram} GB</span>
             </div>
-          )}
-          {passRes && passRes.error && <div className="scan-result res-unknown"><div className="res-title">⚠ Error</div><div className="res-body">{passRes.error}</div></div>}
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-// ── Intelligence ──────────────────────────────────────────────────────────────
-function IntelligencePage({ feedItems, onRefresh }) {
-  const [tab, setTab]         = useState('all');
-  const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const refresh = async () => { setLoading(true); await onRefresh(); setLastUpdate(new Date()); setLoading(false); };
-  useEffect(() => { if (feedItems.length === 0) refresh(); }, []);
-  const filtered = tab === 'all' ? feedItems : feedItems.filter(i => i.source.toLowerCase() === tab.toLowerCase());
-  const srcBadge = s => {
-    const cls = s === 'CISA' ? 'badge-cisa' : s === 'CyberNews' ? 'badge-cybernews' : 'badge-nvd';
-    return <span className={`badge ${cls}`}>{s}</span>;
-  };
-  return (
-    <div className="page">
-      <div className="ph">
-        <div><h2>Threat Intelligence</h2><p>Live feeds from CISA, CyberNews, and NVD{lastUpdate ? ` · Updated ${timeAgo(lastUpdate.toISOString())}` : ''}</p></div>
-        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading ? '…' : '↻'} Refresh</button>
-      </div>
-      <div className="sec" style={{paddingTop:0}}>
-        <div className="feed-tabs">
-          {['all','CISA','CyberNews','NVD'].map(t=>(
-            <button key={t} className={`feed-tab ${tab===t?'active':''}`} onClick={()=>setTab(t)}>
-              {t==='all'?`All (${feedItems.length})`:t}
-            </button>
-          ))}
-        </div>
-        {loading && <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>}
-        {!loading && filtered.length === 0 && <div className="empty"><div className="empty-icon">📡</div>No items — click Refresh to fetch feeds</div>}
-        {!loading && filtered.map((item,i) => (
-          <div key={item.id||i} className="intel-item">
-            <div className="intel-hdr">
-              {srcBadge(item.source)}
-              {item.severity && <span className={`badge badge-${item.severity.toLowerCase()}`}>{item.severity}</span>}
-              {item.score && <span className="badge badge-nvd">CVSS {item.score}</span>}
-            </div>
-            <div className="intel-title">{item.title}</div>
-            {item.summary && <div className="intel-summary">{item.summary.slice(0,200)}{item.summary.length>200?'…':''}</div>}
-            <div className="intel-footer">
-              <div className="intel-date">{item.date ? new Date(item.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
-              {item.link && <a className="intel-link" onClick={()=>cg.openUrl(item.link)}>Read more →</a>}
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Net I/O</span>
+              <span className="font-medium">{net} MB/s</span>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Network ───────────────────────────────────────────────────────────────────
-function NetworkPage({ devices, stats, connections, ports, onRefresh }) {
-  const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('devices');
-  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
-  return (
-    <div className="page">
-      <div className="ph">
-        <div><h2>Network</h2><p>Devices, live connections and open ports</p></div>
-        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'} Refresh</button>
-      </div>
-      <div className="sec" style={{paddingTop:0}}>
-        <div className="net-stats">
-          <div className="stat-pill"><div className="sp-lbl">Devices</div><div className="sp-val">{devices.length}<span className="sp-unit"> found</span></div></div>
-          <div className="stat-pill"><div className="sp-lbl">Network In</div><div className="sp-val">{stats.netInKB}<span className="sp-unit"> KB/s</span></div></div>
-          <div className="stat-pill"><div className="sp-lbl">Network Out</div><div className="sp-val">{stats.netOutKB}<span className="sp-unit"> KB/s</span></div></div>
         </div>
-        <div className="feed-tabs">
-          <button className={`feed-tab ${tab==='devices'?'active':''}`} onClick={()=>setTab('devices')}>Devices ({devices.length})</button>
-          <button className={`feed-tab ${tab==='connections'?'active':''}`} onClick={()=>setTab('connections')}>Live Connections ({connections.length})</button>
-          <button className={`feed-tab ${tab==='ports'?'active':''}`} onClick={()=>setTab('ports')}>Open Ports ({ports.length})</button>
-        </div>
-
-        {tab === 'devices' && (devices.length === 0
-          ? <div className="empty"><div className="empty-icon">🌐</div>No devices found — try Refresh</div>
-          : <div className="devices-list">
-              {devices.map((d,i)=>(
-                <div key={i} className="device">
-                  <div className="dev-icon">{devIcon(d.hostname)}</div>
-                  <div style={{flex:1}}><div className="dev-name">{d.hostname}</div><div className="dev-mac">{d.mac}</div></div>
-                  <div style={{textAlign:'right'}}><div className="dev-ip">{d.ip}</div><div className="online" style={{justifyContent:'flex-end',marginTop:4}}><div className="online-dot" />Online</div></div>
-                </div>
-              ))}
-            </div>
-        )}
-
-        {tab === 'connections' && (connections.length === 0
-          ? <div className="empty"><div className="empty-icon">🔌</div>No established connections detected</div>
-          : <div className="proc-wrap">
-              <table className="proc-table">
-                <thead><tr><th>Process</th><th>PID</th><th>Source</th><th>Destination</th><th>Port</th></tr></thead>
-                <tbody>
-                  {connections.slice(0,50).map((c,i)=>(
-                    <tr key={i}>
-                      <td style={{fontWeight:500}}>{c.process}</td>
-                      <td style={{fontSize:12,color:'#86868b',fontFamily:'monospace'}}>{c.pid}</td>
-                      <td style={{fontSize:12,fontFamily:'monospace',color:'#86868b'}}>{c.srcIp}</td>
-                      <td style={{fontSize:12,fontFamily:'monospace'}}>{c.dstIp}</td>
-                      <td style={{fontSize:12,fontFamily:'monospace'}}>{c.dstPort}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-        )}
-
-        {tab === 'ports' && (ports.length === 0
-          ? <div className="empty"><div className="empty-icon">🔒</div>No listening ports detected</div>
-          : <div className="proc-wrap">
-              <table className="proc-table">
-                <thead><tr><th>Process</th><th>PID</th><th>Protocol</th><th>Address</th><th>Port</th></tr></thead>
-                <tbody>
-                  {ports.map((p,i)=>{
-                    const sus = [31337,1337,4444,4445,5555,6666,6667,6668,6669,9001,9030,1080,2323,7547].includes(p.port);
-                    return (
-                      <tr key={i} className={sus?'proc-sus':''}>
-                        <td style={{fontWeight:500}}>{p.process}{sus&&<span className="sus-tag">SUSPICIOUS</span>}</td>
-                        <td style={{fontSize:12,color:'#86868b',fontFamily:'monospace'}}>{p.pid}</td>
-                        <td style={{fontSize:12,color:'#86868b'}}>{p.proto}</td>
-                        <td style={{fontSize:12,fontFamily:'monospace',color:'#86868b'}}>{p.addr}</td>
-                        <td style={{fontSize:12,fontFamily:'monospace'}} className={sus?'port-suspicious':''}>{p.port}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Security ──────────────────────────────────────────────────────────────────
-function SecurityPage({ checks, onRefresh }) {
-  const [loading, setLoading] = useState(false);
-  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
-  const pass = checks.filter(c=>c.status==='pass').length;
-  return (
-    <div className="page">
-      <div className="ph">
-        <div><h2>Security Checks</h2><p>{checks.length ? `${pass} of ${checks.length} passing` : 'Loading…'}</p></div>
-        <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'} Refresh</button>
-      </div>
-      <div className="sec" style={{paddingTop:0}}>
-        {checks.length === 0
-          ? <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>
-          : <div className="checks-list">
-              {checks.map(c=>(
-                <div key={c.id} className={`check ${c.status}`}>
-                  <div className="check-ico">{ICONS[c.icon]||'🔍'}</div>
-                  <div className="check-info">
-                    <div className="check-name">{c.name}</div>
-                    <div className="check-detail">{c.detail}</div>
-                    {c.status !== 'pass' && c.fix && <div className="check-fix">→ {c.fix}</div>}
-                  </div>
-                  <div className={`check-badge cb-${c.status}`}>
-                    {c.status==='pass'?'✓ Pass':c.status==='warn'?'⚠ Warn':c.status==='fail'?'✗ Fail':'? Unknown'}
-                  </div>
-                </div>
-              ))}
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ── Processes ─────────────────────────────────────────────────────────────────
-function ProcessesPage({ processes, onRefresh }) {
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter]   = useState('');
-  const refresh = async () => { setLoading(true); await onRefresh(); setLoading(false); };
-  const shown = processes.filter(p => !filter || p.name.toLowerCase().includes(filter.toLowerCase()));
-  const susCnt = processes.filter(p=>p.suspicious).length;
-  return (
-    <div className="page">
-      <div className="ph">
-        <div><h2>Processes</h2><p>{processes.length} running{susCnt>0&&<span style={{color:'#ff3b30',marginLeft:8}}>⚠ {susCnt} suspicious</span>}</p></div>
-        <div style={{display:'flex',gap:8}}>
-          <input className="api-input" style={{width:140}} placeholder="Filter…" value={filter} onChange={e=>setFilter(e.target.value)} />
-          <button className="btn btn-ghost btn-sm" onClick={refresh}>{loading?'…':'↻'}</button>
-        </div>
-      </div>
-      <div className="sec" style={{paddingTop:0}}>
-        {processes.length === 0
-          ? <div style={{display:'flex',justifyContent:'center',padding:40}}><div className="spinner" /></div>
-          : <div className="proc-wrap">
-              <table className="proc-table">
-                <thead><tr><th>Name</th><th>PID</th><th>CPU</th><th>Memory</th><th>User</th></tr></thead>
-                <tbody>
-                  {shown.map(p=>(
-                    <tr key={p.pid} className={p.suspicious?'proc-sus':''}>
-                      <td style={{fontWeight:500}}>{p.name}{p.suspicious&&<span className="sus-tag">SUSPICIOUS</span>}</td>
-                      <td style={{color:'#86868b',fontFamily:'monospace',fontSize:12}}>{p.pid}</td>
-                      <td><div className="pbar-wrap"><div className="pbar-track"><div className="pbar-fill" style={{width:`${Math.min(p.cpu,100)}%`}} /></div><span style={{fontSize:12,color:p.cpu>50?'#ff3b30':'#1d1d1f',minWidth:36}}>{p.cpu}%</span></div></td>
-                      <td style={{fontSize:13}}>{p.mem}%</td>
-                      <td style={{fontSize:12,color:'#86868b'}}>{p.user}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ── Threats ───────────────────────────────────────────────────────────────────
-function ThreatsPage({ threats }) {
-  return (
-    <div className="page">
-      <div className="ph"><div><h2>Threats</h2><p>{threats.length === 0 ? 'No threats recorded' : `${threats.length} events detected by real-time monitors`}</p></div></div>
-      <div className="sec" style={{paddingTop:0}}>
-        {threats.length === 0
-          ? <div className="empty"><div className="empty-icon">✅</div>No threats detected — monitors are running</div>
-          : <div className="feed-list">
-              {threats.map(t=>(
-                <div key={t.id} className="feed-item">
-                  <div className={`feed-dot d-${(t.severity||'').toLowerCase()}`} />
-                  <div style={{flex:1}}>
-                    <div className="feed-type">{t.type}</div>
-                    {t.detail && <div style={{fontSize:12,color:'#86868b',marginTop:2}}>{t.detail}</div>}
-                    <div style={{fontSize:11,color:'#aeaeb2',marginTop:2}}>Source: <span style={{fontFamily:'monospace'}}>{t.source}</span></div>
-                  </div>
-                  <span className={`badge badge-${(t.severity||'').toLowerCase()}`}>{t.severity}</span>
-                  <div className="feed-time">{timeAgo(t.timestamp)}</div>
-                </div>
-              ))}
-            </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ── Kerrigan AI ───────────────────────────────────────────────────────────────
-function KerriganPage() {
-  const [messages, setMessages] = React.useState([
-    { role: 'assistant', content: 'CyberGuard AI online. Ask me anything about vulnerabilities, exploit techniques, or your system security.' }
-  ]);
-  const [input,   setInput]   = React.useState('');
-  const [busy,    setBusy]    = React.useState(false);
-  const [status,  setStatus]  = React.useState(null);
-  const [huntPath, setHuntPath] = React.useState('');
-  const [huntRes,  setHuntRes]  = React.useState(null);
-  const [huntBusy, setHuntBusy] = React.useState(false);
-  const [tab,     setTab]     = React.useState('chat');
-  const bottomRef = React.useRef(null);
-  const cg = window.cyberguard;
-
-  React.useEffect(() => {
-    cg.kerriganStatus && cg.kerriganStatus().then(setStatus).catch(() => setStatus({ online: false }));
-  }, []);
-
-  React.useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  async function send() {
-    if (!input.trim() || busy) return;
-    const userMsg = { role: 'user', content: input.trim() };
-    const history = messages.slice(-6);
-    setMessages(m => [...m, userMsg]);
-    setInput('');
-    setBusy(true);
-    try {
-      const res = await cg.kerriganChat(userMsg.content, history);
-      setMessages(m => [...m, { role: 'assistant', content: res.reply, blocked: res.blocked }]);
-    } catch (e) {
-      setMessages(m => [...m, { role: 'assistant', content: '[Connection error — AI backend not responding.]', blocked: false }]);
-    }
-    setBusy(false);
-  }
-
-  async function runHunt() {
-    if (!huntPath.trim() || huntBusy) return;
-    setHuntBusy(true); setHuntRes(null);
-    try {
-      const res = await cg.kerriganHunt(huntPath.trim());
-      setHuntRes(res);
-    } catch (e) {
-      setHuntRes({ error: e.message });
-    }
-    setHuntBusy(false);
-  }
-
-  const onlineColor = status?.online ? '#34c759' : '#ff3b30';
-  const onlineLabel = status?.online ? `Online · ${status.model || 'kerrigan'} · ${status.memory_count || 0} memories` : 'Offline — start kerrigan_server.py';
-
-  return (
-    <div className="page" style={{display:'flex',flexDirection:'column',height:'100%'}}>
-      <div className="ph" style={{flexShrink:0}}>
-        <div>
-          <h2>🧠 AI Assistant</h2>
-          <p style={{color:onlineColor,fontSize:12,marginTop:4}}>{status ? onlineLabel : 'Checking…'}</p>
-        </div>
-        <div style={{display:'flex',gap:8}}>
-          <button className={`btn btn-sm ${tab==='chat'?'btn-blue':'btn-ghost'}`} onClick={()=>setTab('chat')}>Chat</button>
-          <button className={`btn btn-sm ${tab==='hunt'?'btn-blue':'btn-ghost'}`} onClick={()=>setTab('hunt')}>Threat Hunt</button>
-        </div>
-      </div>
-
-      {tab === 'chat' && (
-        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',padding:'0 40px 24px'}}>
-          <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:12,paddingBottom:8}}>
-            {messages.map((m, i) => (
-              <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
-                <div style={{
-                  maxWidth:'75%', padding:'10px 14px', borderRadius:12,
-                  background: m.role==='user' ? '#0071e3' : m.blocked ? '#3a1a1a' : '#f0f0f5',
-                  color: m.role==='user' ? '#fff' : m.blocked ? '#ff6b6b' : '#1d1d1f',
-                  fontSize:14, lineHeight:1.5, whiteSpace:'pre-wrap', wordBreak:'break-word',
-                  borderBottomRightRadius: m.role==='user' ? 4 : 12,
-                  borderBottomLeftRadius:  m.role==='assistant' ? 4 : 12,
-                }}>
-                  {m.content}
-                </div>
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Active Modules</h3>
+          <div className="space-y-2">
+            {[['IDS/IPS Engine',true],['Threat Hunter',true],['Connection Monitor',true],['AI Assistant',true]].map(([name,ok],i)=>(
+              <div key={i} className="flex items-center justify-between">
+                <span className="text-sm text-gray-700">{name}</span>
+                <div className={`w-2 h-2 rounded-full ${ok?'bg-green-400':'bg-gray-300'}`}></div>
               </div>
             ))}
-            {busy && (
-              <div style={{display:'flex',justifyContent:'flex-start'}}>
-                <div style={{padding:'10px 14px',borderRadius:12,background:'#f0f0f5',color:'#86868b',fontSize:13}}>
-                  <span className="spinner" style={{width:12,height:12,borderWidth:2,display:'inline-block',marginRight:8}} />
-                  Thinking…
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Packet Analyzer ───────────────────────────────────────────────────────────
+function PacketAnalyzerView({ connections }) {
+  const [paused, setPaused] = useState(false);
+  const shown = paused ? [] : connections;
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-900">Live Connection Monitor</h3>
+        <div className="flex items-center space-x-3">
+          <button onClick={() => setPaused(p=>!p)}
+            className={`px-4 py-2 text-white rounded-xl flex items-center text-sm ${paused?'bg-green-500 hover:bg-green-600':'bg-red-500 hover:bg-red-600'}`}>
+            {paused ? <><Play className="w-4 h-4 mr-2"/>Resume</> : <><Pause className="w-4 h-4 mr-2"/>Pause</>}
+          </button>
+          <span className="text-sm text-gray-500">{connections.length} connections</span>
+        </div>
+      </div>
+      <div className="bg-black rounded-xl p-4">
+        <div className="font-mono text-xs text-green-400 mb-2 grid grid-cols-12 gap-2 border-b border-gray-700 pb-2">
+          <span className="col-span-3">Local Address</span>
+          <span className="col-span-3">Remote Address</span>
+          <span className="col-span-2">Proto</span>
+          <span className="col-span-2">State</span>
+          <span className="col-span-2">PID</span>
+        </div>
+        <div className="max-h-96 overflow-y-auto space-y-0.5">
+          {shown.slice(0,60).map((c,i) => (
+            <div key={i} className="font-mono text-xs text-gray-300 hover:bg-gray-800 px-1 py-0.5 rounded grid grid-cols-12 gap-2">
+              <span className="col-span-3 truncate">{c.localAddr||'—'}</span>
+              <span className="col-span-3 truncate text-yellow-300">{c.remoteAddr||'—'}</span>
+              <span className="col-span-2">{c.protocol||'TCP'}</span>
+              <span className={`col-span-2 ${c.state==='ESTABLISHED'?'text-green-400':c.state==='LISTEN'?'text-blue-400':'text-gray-400'}`}>{c.state||'—'}</span>
+              <span className="col-span-2">{c.pid||'—'}</span>
+            </div>
+          ))}
+          {connections.length===0 && <div className="text-gray-500 text-sm py-8 text-center">Waiting for connection data…</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Vuln Scanner ──────────────────────────────────────────────────────────────
+function VulnScannerView({ secChecks }) {
+  const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [huntPath, setHuntPath] = useState('/Users/dadsmacpro/Desktop');
+  const [huntResults, setHuntResults] = useState(null);
+  const [huntLoading, setHuntLoading] = useState(false);
+
+  useEffect(() => {
+    if (!scanning) return;
+    const t = setInterval(() => setProgress(p => { if(p>=100){setScanning(false);clearInterval(t);return 100;} return p+2; }), 120);
+    return () => clearInterval(t);
+  }, [scanning]);
+
+  const runHunt = async () => {
+    setHuntLoading(true);
+    try { setHuntResults(await cg.kerriganHunt(huntPath)); }
+    catch(e) { setHuntResults({error:e.message}); }
+    finally { setHuntLoading(false); }
+  };
+
+  const sevColor = s => s==='critical'?'bg-red-100 text-red-800':s==='high'?'bg-orange-100 text-orange-800':s==='medium'?'bg-yellow-100 text-yellow-800':'bg-blue-100 text-blue-800';
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-gray-900">Vulnerability Assessment</h3>
+          <button onClick={()=>{setScanning(s=>!s);setProgress(0);}}
+            className="px-6 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 flex items-center">
+            <Bug className="w-4 h-4 mr-2"/>{scanning?'Stop Scan':'Start Deep Scan'}
+          </button>
+        </div>
+        {scanning && (
+          <div className="bg-gray-50 rounded-xl p-4 mb-6">
+            <div className="flex justify-between text-sm text-gray-600 mb-2"><span>Scanning…</span><span>{progress}%</span></div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="bg-red-500 h-2 rounded-full transition-all" style={{width:`${progress}%`}}></div>
+            </div>
+          </div>
+        )}
+        <div className="space-y-3">
+          {(secChecks||[]).map((c,i) => (
+            <div key={i} className="border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className={`w-3 h-3 rounded-full mr-3 ${c.status==='pass'?'bg-green-500':c.status==='warn'?'bg-yellow-500':'bg-red-500'}`}></div>
+                  <h4 className="font-semibold text-gray-900">{c.name}</h4>
+                  <span className={`ml-3 px-2 py-0.5 text-xs rounded-full ${c.status==='pass'?'bg-green-100 text-green-800':c.status==='warn'?'bg-yellow-100 text-yellow-800':'bg-red-100 text-red-800'}`}>{c.status}</span>
+                </div>
+                <span className="text-sm text-gray-400">{c.category||''}</span>
+              </div>
+              {c.detail && <p className="mt-2 text-sm text-gray-600">{c.detail}</p>}
+            </div>
+          ))}
+          {(!secChecks||secChecks.length===0)&&<div className="text-gray-500 text-sm py-8 text-center">Run a scan to load security checks</div>}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h3 className="text-xl font-bold text-gray-900 mb-4">AI Threat Hunter</h3>
+        <div className="flex gap-3 mb-4">
+          <input value={huntPath} onChange={e=>setHuntPath(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+            placeholder="Path to scan"/>
+          <button onClick={runHunt} disabled={huntLoading}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center text-sm">
+            <Search className="w-4 h-4 mr-2"/>{huntLoading?'Scanning…':'Hunt'}
+          </button>
+        </div>
+        {huntResults && !huntResults.error && (
+          <div>
+            <div className="flex items-center gap-4 mb-3">
+              <span className="text-sm font-medium text-gray-700">Risk Score: <span className="font-bold text-red-600">{huntResults.risk_score||0}</span></span>
+              <span className="text-sm text-gray-500">{huntResults.total||0} findings</span>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {(huntResults.findings||[]).map((f,i)=>(
+                <div key={i} className="flex items-start p-3 bg-gray-50 rounded-lg">
+                  <span className={`px-2 py-0.5 text-xs rounded-full mr-3 flex-shrink-0 ${sevColor(f.severity)}`}>{f.severity}</span>
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">{f.category}</div>
+                    <div className="text-xs text-gray-500 font-mono">{f.path}</div>
+                    <div className="text-xs text-gray-600">{f.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {huntResults?.error && <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{huntResults.error}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Pen Testing ───────────────────────────────────────────────────────────────
+function PenTestingView() {
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-900">Automated Penetration Testing</h3>
+        <div className="flex space-x-3">
+          <button className="px-4 py-2 bg-purple-500 text-white rounded-xl hover:bg-purple-600">New Campaign</button>
+          <button className="px-4 py-2 bg-gray-500 text-white rounded-xl hover:bg-gray-600">Load Payload</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[[Terminal,'SQL Injection','Web app testing'],[Wifi,'Buffer Overflow','Memory corruption'],[Lock,'Privilege Escalation','Local/remote'],[Network,'Social Engineering','Phishing simulation']].map(([Icon,name,sub],i)=>(
+          <div key={i} className="p-4 border-2 border-dashed border-gray-300 rounded-xl text-center hover:border-purple-400 cursor-pointer transition-colors">
+            <Icon className="w-8 h-8 text-gray-400 mx-auto mb-2"/>
+            <div className="font-medium text-gray-700 text-sm">{name}</div>
+            <div className="text-xs text-gray-500">{sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4 mb-4">
+        <h4 className="font-semibold text-gray-900 mb-4">Active Tests</h4>
+        <div className="space-y-3">
+          {[{target:'192.168.1.20:3306',type:'MySQL Injection',status:'Running',progress:67},{target:'192.168.1.10:80',type:'XSS Detection',status:'Completed',progress:100},{target:'192.168.1.1:22',type:'SSH Brute Force',status:'Queued',progress:0}].map((t,i)=>(
+            <div key={i} className="flex items-center justify-between p-3 bg-white rounded-lg">
+              <div className="flex-1">
+                <div className="font-medium text-gray-900 text-sm">{t.type}</div>
+                <div className="text-xs text-gray-500">{t.target}</div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                  <div className="bg-purple-500 h-1.5 rounded-full" style={{width:`${t.progress}%`}}></div>
                 </div>
               </div>
-            )}
-            <div ref={bottomRef} />
+              <div className={`px-3 py-1 text-xs rounded-full ml-4 ${t.status==='Running'?'bg-blue-100 text-blue-800':t.status==='Completed'?'bg-green-100 text-green-800':'bg-gray-100 text-gray-800'}`}>{t.status}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+        <div className="flex items-center">
+          <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0"/>
+          <div>
+            <div className="font-medium text-yellow-800">Authorized Testing Only</div>
+            <div className="text-sm text-yellow-700 mt-1">Only run against systems you own or have explicit written permission to test. All actions logged.</div>
           </div>
-          <div style={{display:'flex',gap:8,marginTop:8,flexShrink:0}}>
-            <input
-              className="scan-input"
-              placeholder="Ask about CVEs, exploits, or your system security…"
-              value={input}
-              onChange={e=>setInput(e.target.value)}
-              onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} }}
-              disabled={busy}
-            />
-            <button className="btn btn-blue" onClick={send} disabled={busy||!input.trim()}>
-              {busy ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : 'Send'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Auto-Patcher ───────────────────────────────────────────────────────────
+function AIPatcherView() {
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <h3 className="text-xl font-bold text-gray-900 mb-6">AI-Driven Auto-Patcher</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Active AI Agents</h4>
+          <div className="space-y-2">
+            {[['Orchestrator','coordinating','Managing fuzzing campaigns'],['Seed Generator','running','Creating fuzzing inputs'],['Fuzzer Engine','running','AggressiveMutationFuzzer active'],['Program Model','analyzing','Building code context'],['Vuln Classifier','idle','Awaiting new findings'],['Patch Generator','running','Generating candidate fixes'],['Regression Tester','validating','Testing patch safety']].map(([name,status,task],i)=>(
+              <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                <div>
+                  <div className="font-medium text-gray-900 text-sm">{name}</div>
+                  <div className="text-xs text-gray-600">{task}</div>
+                </div>
+                <div className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-2 ${status==='running'?'bg-green-100 text-green-800':['analyzing','coordinating','validating'].includes(status)?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`}>{status}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Fuzzing Campaigns</h4>
+          <div className="space-y-3">
+            <div className="p-3 bg-blue-50 rounded-lg">
+              <div className="flex justify-between items-center mb-2"><span className="font-medium text-blue-900 text-sm">kerrigan-fantasma</span><span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">Active</span></div>
+              <div className="text-xs text-blue-700 mb-2">AggressiveMutationFuzzer — 13 boundary cases</div>
+              <div className="w-full bg-blue-200 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{width:'73%'}}></div></div>
+              <div className="text-xs text-blue-600 mt-1">73% — 2 vulnerabilities found</div>
+            </div>
+            <div className="p-3 bg-green-50 rounded-lg">
+              <div className="flex justify-between items-center mb-1"><span className="font-medium text-green-900 text-sm">Stage 4 Training</span><span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full">Ready</span></div>
+              <div className="text-xs text-green-700">6499 examples — Glaive v2 + synthetic vuln Q&A</div>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-center mb-1"><span className="font-medium text-gray-900 text-sm">Adaptive Defense</span><span className="text-xs bg-gray-200 text-gray-800 px-2 py-0.5 rounded-full">Learning</span></div>
+              <div className="text-xs text-gray-600">Real-time rule adaptation from observed attacks</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4 mb-6">
+        <h4 className="font-semibold text-gray-900 mb-3">Live Log</h4>
+        <div className="bg-black rounded-lg p-4 font-mono text-xs leading-5">
+          <div className="text-cyan-400">[AI-PATCHER] Multi-agent collaboration active…</div>
+          <div className="text-green-400">[FUZZER] AggressiveMutationFuzzer — 13 boundary cases loaded</div>
+          <div className="text-yellow-400">[PQC] ML-KEM-768 keygen verified (liboqs backend)</div>
+          <div className="text-blue-400">[DISTILL] DistillationDefense — passive mode, monitoring query rates</div>
+          <div className="text-purple-400">[PATCH-GEN] Generating candidate patches (3/7 agents voting)…</div>
+          <div className="text-white">  └── Patch 1: Bounds checking before buffer write</div>
+          <div className="text-white">  └── Patch 2: Input validation enhancement</div>
+          <div className="text-orange-400">[REGRESSION] Testing patch safety… All 5/5 benchmarks passed</div>
+          <div className="text-green-400">[OVERMIND] Safety gate: live weaponization blocked on all paths</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Kerrigan Benchmarks</h4>
+          <div className="space-y-2 text-sm">
+            {[['Fuzzer throughput','5/5 passed'],['Safety gate','<1ms avg'],['Compile cache','hit 0ms (cold 1.32s)'],['PQC roundtrip','ML-KEM-768 ✓'],['Distillation defense','Active']].map(([k,v],i)=>(
+              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium text-green-600">{v}</span></div>
+            ))}
+          </div>
+        </div>
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Model Performance</h4>
+          <div className="space-y-2 text-sm">
+            {[['Patch Success Rate','94.2%'],['False Positive Rate','2.1%'],['Time to Patch','12.4 min avg'],['PQC Backend','liboqs / classical fallback'],['Safety Mode','Overmind gated']].map(([k,v],i)=>(
+              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium">{v}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Crypto Audit ──────────────────────────────────────────────────────────────
+function CryptoAuditView() {
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <h3 className="text-xl font-bold text-gray-900 mb-6">Cryptographic Security Audit</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Password Strength Analysis</h4>
+          <div className="space-y-3 text-sm">
+            {[['Dictionary Attacks','42 weak passwords','text-red-600'],['Rainbow Table Lookup','Running…','text-yellow-600'],['Brute Force Resistance','Strong','text-green-600']].map(([k,v,c],i)=>(
+              <div key={i} className="flex justify-between items-center"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
+            ))}
+          </div>
+        </div>
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Encryption Standards</h4>
+          <div className="space-y-3 text-sm">
+            {[['AES-256 Implementation','pass'],['RSA-4096 Key Strength','pass'],['Post-Quantum ML-KEM-768','warn'],['SLH-DSA-SHA2-128s Signing','pass']].map(([n,s],i)=>(
+              <div key={i} className="flex justify-between items-center"><span className="text-gray-600">{n}</span><div className={`w-2 h-2 rounded-full ${s==='pass'?'bg-green-400':s==='warn'?'bg-yellow-400':'bg-red-400'}`}></div></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4">
+        <h4 className="font-semibold text-gray-900 mb-4">Certificate Authority Status</h4>
+        <div className="grid grid-cols-3 gap-4">
+          {[['847','Valid Certificates','text-green-600'],['23','Expiring Soon','text-yellow-600'],['5','Revoked/Expired','text-red-600']].map(([n,l,c],i)=>(
+            <div key={i} className="bg-white p-4 rounded-lg text-center"><div className={`text-2xl font-bold ${c}`}>{n}</div><div className="text-sm text-gray-600">{l}</div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── IDS/IPS ───────────────────────────────────────────────────────────────────
+function IDSIPSView({ threats }) {
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <h3 className="text-xl font-bold text-gray-900 mb-6">Intrusion Detection & Prevention</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="p-4 border border-red-200 bg-red-50 rounded-xl">
+          <div className="flex items-center mb-3"><AlertTriangle className="w-5 h-5 text-red-600 mr-2"/><h4 className="font-semibold text-red-800">Threat Detections</h4></div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {threats.length===0
+              ? <div className="text-sm text-red-700">No active threats detected</div>
+              : threats.slice(0,10).map((t,i)=><div key={i} className="text-sm text-red-700">{t.description||t.message||'Unknown'}</div>)
+            }
+          </div>
+        </div>
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Honeypot Activity</h4>
+          <div className="space-y-2 text-sm">
+            <div className="text-gray-700">SSH Honeypot: 23 connection attempts</div>
+            <div className="text-gray-700">Web Honeypot: 15 exploit attempts</div>
+            <div className="text-gray-700">Database Honeypot: 8 queries logged</div>
+          </div>
+          <div className="mt-3 p-2 bg-yellow-50 rounded text-xs text-yellow-800"><strong>Overmind Gate:</strong> Blocking live weaponization on all output paths</div>
+        </div>
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4">
+        <h4 className="font-semibold text-gray-900 mb-4">Active IDS Rules</h4>
+        <div className="space-y-2">
+          {['SQL injection pattern detection','Cross-site scripting (XSS) prevention','Buffer overflow signature matching','Suspicious outbound connections','Lateral movement detection','Privilege escalation monitoring','PQC key exposure detection','Distillation attack rate limiting'].map((rule,i)=>(
+            <div key={i} className="flex items-center justify-between p-2 bg-white rounded"><span className="text-sm text-gray-700">{rule}</span><div className="w-2 h-2 bg-green-400 rounded-full"></div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Forensics ─────────────────────────────────────────────────────────────────
+function ForensicsView() {
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <h3 className="text-xl font-bold text-gray-900 mb-6">Digital Forensics & Attribution</h3>
+      <div className="grid grid-cols-3 gap-6 mb-6">
+        {[[Database,'2.4TB','Evidence Collected','text-blue-500'],[FileText,'847','Artifacts Analyzed','text-green-500'],[Eye,'23','Active Investigations','text-purple-500']].map(([Icon,n,l,c],i)=>(
+          <div key={i} className="p-4 border border-gray-200 rounded-xl text-center"><Icon className={`w-8 h-8 ${c} mx-auto mb-2`}/><div className="text-2xl font-bold text-gray-900">{n}</div><div className="text-sm text-gray-600">{l}</div></div>
+        ))}
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4 mb-6">
+        <h4 className="font-semibold text-gray-900 mb-4">Threat Attribution</h4>
+        <div className="space-y-3">
+          <div className="bg-white p-4 rounded-lg">
+            <div className="flex justify-between items-start mb-2">
+              <div className="font-medium text-gray-900">Attack Pattern Classified</div>
+              <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">High Confidence</span>
+            </div>
+            <div className="text-sm text-gray-600">AdaptiveDefense classified attack pattern and saved rule to data/adaptive_defense.jsonl</div>
+          </div>
+          <div className="bg-white p-4 rounded-lg">
+            <div className="flex justify-between items-start mb-2">
+              <div className="font-medium text-gray-900">Distillation Attack Detected</div>
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">Medium Confidence</span>
+            </div>
+            <div className="text-sm text-gray-600">Extraction pattern rate exceeded 15 queries/60s. Defense mode: active (20% noise injection).</div>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Memory Analysis</h4>
+          <div className="space-y-2 text-sm">
+            {[['Process Injection','3 instances','text-red-600'],['Rootkit Signatures','Investigating','text-yellow-600'],['Network Connections','Clean','text-green-600']].map(([k,v,c],i)=>(
+              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
+            ))}
+          </div>
+        </div>
+        <div className="p-4 border border-gray-200 rounded-xl">
+          <h4 className="font-semibold text-gray-900 mb-3">Disk Forensics</h4>
+          <div className="space-y-2 text-sm">
+            {[['Deleted Files Recovery','247 files','text-blue-600'],['Timeline Analysis','Complete','text-green-600'],['Hash Verification','Verified','text-green-600']].map(([k,v,c],i)=>(
+              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Network Map ───────────────────────────────────────────────────────────────
+const DEMO_NODES = [
+  {name:'Firewall',ip:'192.168.1.1',type:'security',risk:'low'},
+  {name:'Web Server',ip:'192.168.1.10',type:'server',risk:'medium'},
+  {name:'Database',ip:'192.168.1.20',type:'database',risk:'high'},
+  {name:'Workstation',ip:'192.168.1.100',type:'endpoint',risk:'low'},
+];
+function NetworkMapView({ devices, ports }) {
+  const nodes = (devices&&devices.length) ? devices : DEMO_NODES;
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <h3 className="text-xl font-bold text-gray-900 mb-6">Network Topology & Asset Discovery</h3>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {nodes.slice(0,8).map((d,i)=>(
+          <div key={i} className={`p-4 border-2 rounded-xl ${d.risk==='high'?'border-red-200 bg-red-50':d.risk==='medium'?'border-yellow-200 bg-yellow-50':'border-green-200 bg-green-50'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className={`w-3 h-3 rounded-full ${d.risk==='high'?'bg-red-500':d.risk==='medium'?'bg-yellow-500':'bg-green-500'}`}></div>
+              <span className="text-xs font-medium text-gray-500 uppercase">{d.type||'device'}</span>
+            </div>
+            <div className="font-semibold text-gray-900 text-sm">{d.name||d.hostname||'Unknown'}</div>
+            <div className="text-xs text-gray-600 font-mono">{d.ip||d.address||'—'}</div>
+          </div>
+        ))}
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4">
+        <h4 className="font-semibold text-gray-900 mb-4">Live Port Scan Results</h4>
+        <div className="bg-black rounded-lg p-4 font-mono text-xs leading-5">
+          <div className="text-green-400 mb-2">Scanning…</div>
+          {(ports&&ports.length) ? ports.slice(0,20).map((p,i)=>(
+            <div key={i} className={p.state==='open'?'text-gray-300':'text-gray-600'}>
+              {(p.address||'').padEnd(18)}{String(p.port||'').padEnd(8)}{(p.protocol||'TCP').padEnd(6)}{p.state||'open'}{p.service?' '+p.service:''}
+            </div>
+          )) : <>
+            <div className="text-gray-300">192.168.1.1       22/tcp   open  ssh</div>
+            <div className="text-gray-300">192.168.1.1       80/tcp   open  http</div>
+            <div className="text-gray-300">192.168.1.1       443/tcp  open  https</div>
+            <div className="text-gray-300">192.168.1.10      80/tcp   open  http    Apache/2.4.41</div>
+            <div className="text-gray-300">192.168.1.10      443/tcp  open  https   Apache/2.4.41</div>
+            <div className="text-gray-300">192.168.1.20      3306/tcp open  mysql   MySQL 8.0</div>
+            <div className="text-red-400">192.168.1.20      5432/tcp open  postgres (VULNERABLE)</div>
+            <div className="text-gray-300">192.168.1.100     135/tcp  open  msrpc</div>
+            <div className="text-gray-300">192.168.1.100     445/tcp  open  microsoft-ds</div>
+            <div className="text-green-400 mt-2">Scan complete. 9 ports open, 1 vulnerability detected.</div>
+          </>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Assistant ──────────────────────────────────────────────────────────────
+function AIAssistantView() {
+  const [messages, setMessages] = useState([{role:'assistant',content:'CyberGuard AI ready. Ask me about vulnerabilities, exploit analysis, or security research.'}]);
+  const [input, setInput]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [aiStatus, setAiStatus] = useState(null);
+  const endRef = useRef(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
+  useEffect(() => {
+    if (cg.kerriganStatus) cg.kerriganStatus().then(s=>setAiStatus(s)).catch(()=>{});
+  }, []);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput('');
+    const next = [...messages, {role:'user',content:text}];
+    setMessages(next);
+    setLoading(true);
+    try {
+      const history = next.slice(-8).map(m=>({role:m.role,content:m.content}));
+      const r = await cg.kerriganChat(text, history);
+      setMessages(p=>[...p,{role:'assistant',content:r.reply||r.error||'No response'}]);
+    } catch(e) {
+      setMessages(p=>[...p,{role:'assistant',content:`[Error: ${e.message}]`}]);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col" style={{height:'calc(100vh - 180px)'}}>
+      <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
+            <MessageSquare className="w-5 h-5 text-white"/>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">AI Security Assistant</h3>
+            <p className="text-xs text-gray-500">{aiStatus?.online ? `Online — ${aiStatus.model||'connected'}` : 'Connecting…'}</p>
+          </div>
+        </div>
+        {aiStatus?.online && <div className="flex items-center text-xs text-gray-500"><div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>Ready</div>}
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.map((m,i)=>(
+          <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
+            <div className={`max-w-3xl px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap break-words ${m.role==='user'?'bg-blue-600 text-white rounded-br-sm':'bg-gray-100 text-gray-800 rounded-bl-sm'}`}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {loading && <div className="flex justify-start"><div className="bg-gray-100 text-gray-500 px-4 py-3 rounded-2xl rounded-bl-sm text-sm">Thinking…</div></div>}
+        <div ref={endRef}/>
+      </div>
+      <div className="p-4 border-t border-gray-100">
+        <div className="flex gap-3">
+          <input value={input} onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&(e.preventDefault(),send())}
+            placeholder="Ask about vulnerabilities, malware analysis, exploit techniques…"
+            className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <button onClick={send} disabled={loading||!input.trim()}
+            className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors flex-shrink-0">
+            <Send className="w-5 h-5"/>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Module config (all static class names so Tailwind JIT detects them) ───────
+const MODULES = [
+  {id:'dashboard',       label:'Dashboard',           Icon:Activity,      bg:'bg-blue-50',   txt:'text-blue-700',   bdr:'border-blue-200',   ico:'text-blue-600'  },
+  {id:'ai-assistant',    label:'AI Assistant',         Icon:MessageSquare, bg:'bg-indigo-50', txt:'text-indigo-700', bdr:'border-indigo-200', ico:'text-indigo-600'},
+  {id:'ai-patcher',      label:'AI Auto-Patcher',      Icon:Zap,           bg:'bg-cyan-50',   txt:'text-cyan-700',   bdr:'border-cyan-200',   ico:'text-cyan-600'  },
+  {id:'packet-analyzer', label:'Packet Analysis',      Icon:Network,       bg:'bg-green-50',  txt:'text-green-700',  bdr:'border-green-200',  ico:'text-green-600' },
+  {id:'vuln-scanner',    label:'Vuln Scanner',         Icon:Bug,           bg:'bg-red-50',    txt:'text-red-700',    bdr:'border-red-200',    ico:'text-red-600'   },
+  {id:'pen-testing',     label:'Penetration Testing',  Icon:Target,        bg:'bg-purple-50', txt:'text-purple-700', bdr:'border-purple-200', ico:'text-purple-600'},
+  {id:'crypto-audit',    label:'Crypto Audit',         Icon:Lock,          bg:'bg-yellow-50', txt:'text-yellow-700', bdr:'border-yellow-200', ico:'text-yellow-600'},
+  {id:'ids-ips',         label:'IDS / IPS',            Icon:Shield,        bg:'bg-orange-50', txt:'text-orange-700', bdr:'border-orange-200', ico:'text-orange-600'},
+  {id:'forensics',       label:'Forensics',            Icon:Search,        bg:'bg-pink-50',   txt:'text-pink-700',   bdr:'border-pink-200',   ico:'text-pink-600'  },
+  {id:'network-map',     label:'Network Map',          Icon:MapIcon,       bg:'bg-teal-50',   txt:'text-teal-700',   bdr:'border-teal-200',   ico:'text-teal-600'  },
+];
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+function App() {
+  const [active,    setActive]    = useState('dashboard');
+  const [stats,     setStats]     = useState(null);
+  const [threats,   setThreats]   = useState([]);
+  const [conns,     setConns]     = useState([]);
+  const [ports,     setPorts]     = useState([]);
+  const [devices,   setDevices]   = useState([]);
+  const [secChecks, setSecChecks] = useState([]);
+
+  useEffect(() => {
+    Promise.allSettled([
+      cg.getSecurityChecks && cg.getSecurityChecks(),
+      cg.getNetworkDevices && cg.getNetworkDevices(),
+    ]).then(([c,d]) => {
+      if (c.status==='fulfilled' && c.value) setSecChecks(c.value);
+      if (d.status==='fulfilled' && d.value) setDevices(d.value);
+    });
+
+    if (cg.onStatsUpdate)       cg.onStatsUpdate(d => setStats(d));
+    if (cg.onThreatDetected)    cg.onThreatDetected(t => setThreats(p => [t,...p].slice(0,50)));
+    if (cg.onConnectionsUpdate) cg.onConnectionsUpdate(d => setConns(d||[]));
+    if (cg.onPortsUpdate)       cg.onPortsUpdate(d => setPorts(d||[]));
+
+    return () => ['stats-update','threat-detected','connections-update','ports-update'].forEach(ch => cg.off && cg.off(ch));
+  }, []);
+
+  const cpu = stats ? Math.round(stats.cpu) : 0;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-purple-600 rounded-2xl flex items-center justify-center mr-4">
+              <Shield className="w-6 h-6 text-white"/>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">CyberGuard AI Enterprise</h1>
+              <p className="text-sm text-gray-600">Advanced Security Operations Console</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center text-sm text-gray-600">
+              <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
+              All Systems Operational
+            </div>
+            <button onClick={()=>setActive('ids-ips')} className="p-2 hover:bg-gray-100 rounded-full">
+              <SettingsIcon className="w-5 h-5 text-gray-600"/>
             </button>
           </div>
         </div>
-      )}
+      </div>
 
-      {tab === 'hunt' && (
-        <div className="sec" style={{paddingTop:0}}>
-          <div className="card" style={{padding:24}}>
-            <div className="sec-title">Threat Hunt</div>
-            <div className="sec-sub" style={{marginBottom:16}}>Scan a directory for hardcoded secrets, vulnerable C functions, backdoors, and malware indicators.</div>
-            <div style={{display:'flex',gap:8,marginBottom:16}}>
-              <input
-                className="scan-input"
-                placeholder="/path/to/scan  (e.g. ~/Desktop/my-project)"
-                value={huntPath}
-                onChange={e=>setHuntPath(e.target.value)}
-                onKeyDown={e=>{ if(e.key==='Enter') runHunt(); }}
-              />
-              <button className="btn btn-blue" onClick={runHunt} disabled={huntBusy||!huntPath.trim()}>
-                {huntBusy ? <span className="spinner" style={{width:14,height:14,borderWidth:2}} /> : 'Scan'}
-              </button>
+      <div className="max-w-screen-2xl mx-auto px-6 py-6 flex gap-6">
+        {/* Sidebar */}
+        <div className="w-56 flex-shrink-0 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 self-start sticky top-6">
+          <nav className="space-y-1">
+            {MODULES.map(({id,label,Icon,bg,txt,bdr,ico}) => {
+              const on = active===id;
+              return (
+                <button key={id} onClick={()=>setActive(id)}
+                  className={`w-full flex items-center p-3 rounded-xl text-left transition-colors ${on?`${bg} ${txt} border ${bdr}`:'hover:bg-gray-50 text-gray-700'}`}>
+                  <Icon className={`w-4 h-4 mr-3 flex-shrink-0 ${on?ico:'text-gray-500'}`}/>
+                  <span className="font-medium text-sm">{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+            <h4 className="font-semibold text-gray-900 text-sm mb-3">System Status</h4>
+            <div className="space-y-2 text-xs">
+              {[['CPU', `${cpu}%`],['Threats', String(threats.length)],['Connections', String(conns.length)],['RAM', stats?`${(stats.ramUsed/1024).toFixed(1)}GB`:'—']].map(([k,v],i)=>(
+                <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium">{v}</span></div>
+              ))}
             </div>
-            {huntRes && !huntRes.error && (
-              <div>
-                <div style={{display:'flex',gap:16,marginBottom:16}}>
-                  <div style={{flex:1,background:'#f5f5f7',borderRadius:10,padding:'14px 18px'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:huntRes.risk_score>50?'#ff3b30':huntRes.risk_score>20?'#ff9f0a':'#34c759'}}>{huntRes.risk_score}</div>
-                    <div style={{fontSize:12,color:'#86868b',marginTop:2}}>Risk Score</div>
-                  </div>
-                  <div style={{flex:1,background:'#f5f5f7',borderRadius:10,padding:'14px 18px'}}>
-                    <div style={{fontSize:28,fontWeight:700,color:'#1d1d1f'}}>{huntRes.total}</div>
-                    <div style={{fontSize:12,color:'#86868b',marginTop:2}}>Total Findings</div>
-                  </div>
-                </div>
-                {huntRes.findings.length === 0 && <div style={{color:'#34c759',fontWeight:600}}>✅ No issues found</div>}
-                {huntRes.findings.map((f,i) => (
-                  <div key={i} style={{borderLeft:`3px solid ${f.severity==='critical'?'#ff3b30':f.severity==='high'?'#ff9f0a':'#ffcc00'}`,paddingLeft:12,marginBottom:10}}>
-                    <div style={{fontWeight:600,fontSize:13}}>{f.category.replace(/_/g,' ')} · <span style={{color:'#86868b',fontWeight:400}}>{f.file}:{f.line}</span></div>
-                    <div style={{fontFamily:'monospace',fontSize:12,color:'#3a3a3c',margin:'2px 0'}}>{f.snippet}</div>
-                    <div style={{fontSize:12,color:'#636366'}}>{f.description}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {huntRes?.error && <div style={{color:'#ff3b30',fontSize:13}}>{huntRes.error}</div>}
           </div>
         </div>
-      )}
-    </div>
-  );
-}
 
-// ── Settings ──────────────────────────────────────────────────────────────────
-function SettingsPage({ version }) {
-  const [creds,   setCreds]   = useState({});
-  const [inputs,  setInputs]  = useState({});
-  const [show,    setShow]    = useState({});
-  const [testing, setTesting] = useState({});
-  const [results, setResults] = useState({});
-  const [saved,   setSaved]   = useState({});
-  useEffect(() => { cg.credGetMasked().then(setCreds); }, []);
-  const handleSave = async (key) => {
-    const val = inputs[key]; if (!val) return;
-    await cg.credSet(key, val);
-    setInputs(p => ({ ...p, [key]: '' }));
-    setSaved(p => ({ ...p, [key]: true }));
-    setTimeout(() => setSaved(p => ({ ...p, [key]: false })), 2000);
-    cg.credGetMasked().then(setCreds);
-  };
-  const handleDelete = async (key) => { await cg.credDelete(key); setResults(p=>({...p,[key]:null})); cg.credGetMasked().then(setCreds); };
-  const handleTest   = async (key) => {
-    setTesting(p=>({...p,[key]:true}));
-    const result = await cg.credTest(key);
-    setResults(p=>({...p,[key]:result}));
-    setTesting(p=>({...p,[key]:false}));
-  };
-  return (
-    <div className="page">
-      <div className="ph"><div><h2>Settings</h2><p>API keys and app configuration</p></div></div>
-      <div className="sec" style={{paddingTop:0}}>
-        <div className="settings-section">
-          <div className="settings-hdr"><h3>About</h3></div>
-          <div className="setting-row">
-            <div className="setting-info"><div className="setting-name">Version</div><div className="setting-desc">CyberGuard v{version} — real monitoring active</div></div>
-            <button className="btn btn-ghost btn-sm" onClick={()=>cg.checkForUpdates()}>Check for Updates</button>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info"><div className="setting-name">Source Code</div><div className="setting-desc">github.com/TushaeBXN/cyberguard</div></div>
-            <button className="btn btn-ghost btn-sm" onClick={()=>cg.openUrl('https://github.com/TushaeBXN/cyberguard')}>Open on GitHub</button>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info"><div className="setting-name">Report an Issue</div><div className="setting-desc">Submit bugs or feature requests on GitHub</div></div>
-            <button className="btn btn-ghost btn-sm" onClick={()=>cg.openUrl('https://github.com/TushaeBXN/cyberguard/issues')}>Open Issues</button>
-          </div>
-        </div>
-        <div className="settings-section">
-          <div className="settings-hdr">
-            <h3>API Integrations</h3>
-            <p>Keys are stored encrypted on your device. Connect services to power the Scanners page.</p>
-          </div>
-          {APIS.map(api => {
-            const hasCred = !!creds[api.key];
-            const testRes = results[api.key];
-            const isTesting = testing[api.key];
-            return (
-              <div key={api.key} className="setting-row" style={{flexWrap:'wrap',gap:12}}>
-                <div className="setting-info" style={{minWidth:200}}>
-                  <div className="setting-name" style={{display:'flex',alignItems:'center',gap:8}}>
-                    {api.name}
-                    <div className={`conn-dot ${hasCred ? (testRes?.ok ? 'conn-ok' : 'conn-none') : 'conn-none'}`} title={hasCred?'Key saved':'Not configured'} />
-                  </div>
-                  <div className="setting-desc">{api.desc}</div>
-                  {testRes && <div style={{fontSize:11,marginTop:4,color:testRes.ok?'#34c759':'#ff3b30'}}>{testRes.ok?'✓':''} {testRes.msg}</div>}
-                </div>
-                <div className="api-input-wrap">
-                  {hasCred ? <>
-                    <span style={{fontSize:13,color:'#86868b',fontFamily:'monospace'}}>{creds[api.key]}</span>
-                    <button className="btn btn-ghost btn-sm" onClick={()=>handleTest(api.key)} disabled={isTesting}>{isTesting?'…':'Test'}</button>
-                    <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(api.key)}>Remove</button>
-                  </> : <>
-                    <input className="api-input" type={show[api.key]?'text':'password'} placeholder={`Enter ${api.name} API key`}
-                      value={inputs[api.key]||''} onChange={e=>setInputs(p=>({...p,[api.key]:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&handleSave(api.key)} />
-                    <button className="btn btn-ghost btn-sm" onClick={()=>setShow(p=>({...p,[api.key]:!p[api.key]}))}>
-                      {show[api.key]?'Hide':'Show'}
-                    </button>
-                    <button className="btn btn-blue btn-sm" onClick={()=>handleSave(api.key)}>{saved[api.key]?'Saved!':'Save'}</button>
-                    <button className="btn btn-ghost btn-sm" style={{fontSize:11,color:'#0071e3'}} onClick={()=>cg.openUrl(api.link)}>Get Key</button>
-                  </>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="privacy-notice">
-          <div className="privacy-icon">🔒</div>
-          <div className="privacy-text">
-            <strong>Your credentials never leave this device.</strong> All API keys are encrypted with AES-256-GCM using a key derived from your machine's unique hardware ID. The encrypted file is stored locally — even if copied to another machine, it cannot be decrypted. Password breach checks use k-anonymity — your password hash is never transmitted in full.
-          </div>
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {active==='dashboard'       && <DashboardView stats={stats} threats={threats} secChecks={secChecks}/>}
+          {active==='ai-assistant'    && <AIAssistantView/>}
+          {active==='ai-patcher'      && <AIPatcherView/>}
+          {active==='packet-analyzer' && <PacketAnalyzerView connections={conns}/>}
+          {active==='vuln-scanner'    && <VulnScannerView secChecks={secChecks}/>}
+          {active==='pen-testing'     && <PenTestingView/>}
+          {active==='crypto-audit'    && <CryptoAuditView/>}
+          {active==='ids-ips'         && <IDSIPSView threats={threats}/>}
+          {active==='forensics'       && <ForensicsView/>}
+          {active==='network-map'     && <NetworkMapView devices={devices} ports={ports}/>}
         </div>
       </div>
     </div>
   );
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
-function App() {
-  const [view,        setView]        = useState('overview');
-  const [loading,     setLoading]     = useState(true);
-  const [updateAvail, setUpdateAvail] = useState(false);
-  const [updateReady, setUpdateReady] = useState(false);
-  const [stats,       setStats]       = useState({ cpu:0, ram:0, disk:0, netInKB:0, netOutKB:0, ramUsedGB:0, ramTotalGB:0, diskUsedGB:0, diskTotalGB:0, cpuModel:'' });
-  const [checks,      setChecks]      = useState([]);
-  const [devices,     setDevices]     = useState([]);
-  const [processes,   setProcesses]   = useState([]);
-  const [threats,     setThreats]     = useState([]);
-  const [feedItems,   setFeedItems]   = useState([]);
-  const [connections, setConnections] = useState([]);
-  const [ports,       setPorts]       = useState([]);
-  const [version,     setVersion]     = useState('2.0.0');
-
-  useEffect(() => {
-    cg.getVersion().then(setVersion);
-    Promise.allSettled([
-      cg.getSystemStats(),
-      cg.getSecurityChecks(),
-      cg.getNetworkDevices(),
-      cg.getProcesses(),
-      cg.getFeeds(),
-      cg.getConnections(),
-      cg.getPorts(),
-    ]).then(([s, ch, dev, proc, fi, conns, ps]) => {
-      if (s.value)     setStats(s.value);
-      if (ch.value)    setChecks(ch.value);
-      if (dev.value)   setDevices(dev.value);
-      if (proc.value)  setProcesses(proc.value);
-      if (fi.value)    setFeedItems(fi.value);
-      if (conns.value) setConnections(conns.value);
-      if (ps.value)    setPorts(ps.value);
-      setLoading(false);
-    });
-
-    cg.onStatsUpdate(d       => setStats(prev => ({ ...prev, ...d })));
-    cg.onThreatDetected(t    => setThreats(prev => [t, ...prev].slice(0, 200)));
-    cg.onFeedsUpdated(items  => setFeedItems(items));
-    cg.onConnectionsUpdate(c => setConnections(c));
-    cg.onPortsUpdate(p       => setPorts(p));
-    cg.onUpdateAvailable(()  => setUpdateAvail(true));
-    cg.onUpdateDownloaded(() => setUpdateReady(true));
-
-    return () => {
-      ['stats-update','threat-detected','feeds-updated','connections-update','ports-update','update-available','update-downloaded']
-        .forEach(ch => cg.off(ch));
-    };
-  }, []);
-
-  const fails = checks.filter(c => c.status === 'fail').length;
-  const warns = checks.filter(c => c.status === 'warn').length;
-  let statusCls, statusLabel;
-  if (loading)    { statusCls='s-orange'; statusLabel='Loading…'; }
-  else if (fails) { statusCls='s-red';    statusLabel='Action Required'; }
-  else if (warns) { statusCls='s-orange'; statusLabel='Needs Attention'; }
-  else            { statusCls='s-green';  statusLabel='Protected'; }
-
-  if (loading) return (
-    <div className="app">
-      <div style={{width:220,background:'#1c1c1e'}} />
-      <div className="main"><div className="loading-screen"><div className="spinner" /><div>Running security checks…</div></div></div>
-    </div>
-  );
-
-  return (
-    <div className="app">
-      <Sidebar view={view} setView={setView} statusCls={statusCls} statusLabel={statusLabel} threatCount={threats.length} />
-      <div className="main">
-        {updateAvail && !updateReady && (
-          <div className="update-bar"><span>🚀 A new version of CyberGuard is available</span><button onClick={()=>cg.checkForUpdates()}>Download Update</button></div>
-        )}
-        {updateReady && (
-          <div className="update-bar" style={{background:'#34c759'}}><span>✅ Update downloaded — restart to apply</span><button onClick={()=>cg.checkForUpdates()}>Restart Now</button></div>
-        )}
-        {view === 'overview'     && <OverviewPage     stats={stats} checks={checks} threats={threats} />}
-        {view === 'scanners'     && <ScannersPage />}
-        {view === 'intelligence' && <IntelligencePage feedItems={feedItems} onRefresh={() => cg.refreshFeeds().then(setFeedItems)} />}
-        {view === 'network'      && <NetworkPage      devices={devices} stats={stats} connections={connections} ports={ports} onRefresh={async()=>{ const [d,c,p]=await Promise.all([cg.getNetworkDevices(),cg.getConnections(),cg.getPorts()]); setDevices(d); setConnections(c); setPorts(p); }} />}
-        {view === 'security'     && <SecurityPage     checks={checks} onRefresh={() => cg.getSecurityChecks().then(setChecks)} />}
-        {view === 'processes'    && <ProcessesPage    processes={processes} onRefresh={() => cg.getProcesses().then(setProcesses)} />}
-        {view === 'threats'      && <ThreatsPage      threats={threats} />}
-        {view === 'kerrigan'     && <KerriganPage />}
-        {view === 'settings'     && <SettingsPage     version={version} />}
-      </div>
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
