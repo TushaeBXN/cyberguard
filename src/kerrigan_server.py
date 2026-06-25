@@ -71,6 +71,51 @@ def _get_db():
         print(f"[DB] MySQL unavailable: {e}")
         return None
 
+def _ensure_tables():
+    conn = _get_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS honeypot_events (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                honeypot_type VARCHAR(16) NOT NULL,
+                attacker_ip   VARCHAR(64) NOT NULL,
+                attacker_port INT,
+                payload       TEXT,
+                created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_type (honeypot_type),
+                INDEX idx_ip   (attacker_ip),
+                INDEX idx_time (created_at)
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] honeypot_events table error: {e}")
+    finally:
+        conn.close()
+
+def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
+    conn = _get_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO honeypot_events (honeypot_type, attacker_ip, attacker_port, payload) VALUES (%s,%s,%s,%s)",
+            (honeypot_type, attacker_ip, int(attacker_port or 0), payload[:1000])
+        )
+        conn.commit()
+        # Auto-feed into Kerrigan memory
+        _save_memory_to_db(
+            f"Honeypot hit [{honeypot_type}]: attacker {attacker_ip}:{attacker_port} — {payload[:200]}",
+            expert="honeypot",
+            tags=f"honeypot,{honeypot_type},{attacker_ip}"
+        )
+    except Exception as e:
+        print(f"[DB] honeypot log error: {e}")
+    finally:
+        conn.close()
+
 def _ensure_conversations_table():
     conn = _get_db()
     if not conn: return
@@ -146,8 +191,103 @@ def _init():
 @app.on_event("startup")
 async def on_startup():
     _init()
+    _ensure_tables()
     _ensure_conversations_table()
+    asyncio.create_task(_ssh_honeypot())
+    asyncio.create_task(_web_honeypot())
+    asyncio.create_task(_db_honeypot())
     print("CyberGuard AI server ready", flush=True)
+
+
+# ── Real Honeypots ─────────────────────────────────────────────────────────────
+
+SSH_BANNER = b"SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n"
+HTTP_TRAP  = b"HTTP/1.1 200 OK\r\nServer: Apache/2.4.41\r\nContent-Length: 0\r\n\r\n"
+MYSQL_GREETING = (
+    b"\x4a\x00\x00\x00"           # packet length + seq
+    b"\x0a"                        # protocol version 10
+    b"8.0.32\x00"                 # server version
+    b"\x01\x00\x00\x00"           # connection id
+    b"\x52\x7d\x1f\x29\x65\x43\x41\x48\x00"  # auth plugin data part 1
+    b"\xff\xf7"                    # capability flags low
+    b"\x21"                        # character set utf8
+    b"\x02\x00"                    # server status
+    b"\xff\x81"                    # capability flags high
+    b"\x15"                        # auth plugin data length
+    b"\x00" * 10                   # reserved
+    b"\x7e\x31\x3e\x1c\x58\x58\x36\x73\x6a\x49\x5a\x55\x00"  # auth plugin data part 2
+    b"mysql_native_password\x00"
+)
+
+async def _ssh_honeypot(host="0.0.0.0", port=2222):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        try:
+            writer.write(SSH_BANNER)
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(512), timeout=10)
+            payload = data.decode("utf-8", errors="replace").strip()
+        except Exception:
+            payload = ""
+        finally:
+            writer.close()
+        print(f"[Honeypot-SSH] {ip}:{p} — {repr(payload[:80])}")
+        _log_honeypot("ssh", ip, p, payload)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] SSH listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] SSH failed on {port}: {e}")
+
+async def _web_honeypot(host="0.0.0.0", port=8080):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        try:
+            data = await asyncio.wait_for(reader.read(2048), timeout=10)
+            payload = data.decode("utf-8", errors="replace")
+            first_line = payload.split("\n")[0].strip()
+            writer.write(HTTP_TRAP)
+            await writer.drain()
+        except Exception:
+            first_line = ""
+        finally:
+            writer.close()
+        print(f"[Honeypot-Web] {ip}:{p} — {first_line[:120]}")
+        _log_honeypot("web", ip, p, first_line)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] Web listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] Web failed on {port}: {e}")
+
+async def _db_honeypot(host="0.0.0.0", port=3307):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        try:
+            writer.write(MYSQL_GREETING)
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(512), timeout=10)
+            payload = data.hex()[:120]
+        except Exception:
+            payload = ""
+        finally:
+            writer.close()
+        print(f"[Honeypot-DB] {ip}:{p} — {payload}")
+        _log_honeypot("database", ip, p, payload)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] Database listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] Database failed on {port}: {e}")
 
 
 @app.post("/chat")
@@ -260,6 +400,38 @@ async def hunt(request: Request):
         }
     except Exception as e:
         return {"error": str(e), "findings": [], "risk_score": 0}
+
+
+@app.get("/honeypot/counts")
+async def honeypot_counts():
+    conn = _get_db()
+    if not conn:
+        return {"ssh": 0, "web": 0, "database": 0, "total": 0, "recent": []}
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("""
+            SELECT honeypot_type, COUNT(*) as cnt
+            FROM honeypot_events GROUP BY honeypot_type
+        """)
+        rows = {r["honeypot_type"]: r["cnt"] for r in cur.fetchall()}
+        cur.execute("""
+            SELECT honeypot_type, attacker_ip, attacker_port, payload, created_at
+            FROM honeypot_events ORDER BY created_at DESC LIMIT 20
+        """)
+        recent = cur.fetchall()
+        for r in recent:
+            if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+        return {
+            "ssh":      rows.get("ssh", 0),
+            "web":      rows.get("web", 0),
+            "database": rows.get("database", 0),
+            "total":    sum(rows.values()),
+            "recent":   recent,
+        }
+    except Exception as e:
+        return {"ssh": 0, "web": 0, "database": 0, "total": 0, "recent": [], "error": str(e)}
+    finally:
+        conn.close()
 
 
 @app.get("/db/conversations")

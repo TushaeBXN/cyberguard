@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('cyberguard', {
   getNetworkDevices: () => ipcRenderer.invoke('get-network-devices'),
   getProcesses:      () => ipcRenderer.invoke('get-processes'),
   killProcess:       (pid) => ipcRenderer.invoke('kill-process', pid),
+  honeypotCounts:    () => ipcRenderer.invoke('honeypot-counts'),
   dbMemories:        (limit, offset) => ipcRenderer.invoke('db-memories', limit, offset),
   dbCrashes:         (limit) => ipcRenderer.invoke('db-crashes', limit),
   dbSessions:        (limit) => ipcRenderer.invoke('db-sessions', limit),

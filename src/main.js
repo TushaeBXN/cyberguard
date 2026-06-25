@@ -403,6 +403,11 @@ ipcMain.handle('open-url', (_, url) => shell.openExternal(url));
 
 // ── Kerrigan DB IPC ───────────────────────────────────────────────────────────
 
+ipcMain.handle('honeypot-counts', async () => {
+  try { return await kerrigan.get('/honeypot/counts'); }
+  catch (e) { return { ssh: 0, web: 0, database: 0, total: 0, recent: [], error: e.message }; }
+});
+
 ipcMain.handle('db-memories', async (_, limit = 20, offset = 0) => {
   try {
     const r = await kerrigan.get(`/db/memories?limit=${limit}&offset=${offset}`);

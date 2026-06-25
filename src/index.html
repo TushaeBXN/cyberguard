@@ -485,20 +485,57 @@ function CryptoAuditView() {
 
 // ── IDS/IPS ───────────────────────────────────────────────────────────────────
 function IDSIPSView({ threats }) {
+  const [hp, setHp]         = useState({ ssh: 0, web: 0, database: 0, total: 0, recent: [] });
+  const [hpLoading, setHpLoading] = useState(false);
+
+  const loadHoneypot = () => {
+    setHpLoading(true);
+    const fn = window.cyberguard?.honeypotCounts;
+    (fn ? fn() : Promise.resolve({ ssh:0, web:0, database:0, total:0, recent:[] }))
+      .then(d => { setHp(d||{}); setHpLoading(false); })
+      .catch(() => setHpLoading(false));
+  };
+
+  useEffect(() => { loadHoneypot(); const t = setInterval(loadHoneypot, 15000); return () => clearInterval(t); }, []);
+
+  const hpColor = n => n > 0 ? 'text-red-600 font-bold' : 'text-gray-400';
+  const severityClass = s => s==='critical'?'bg-red-200 text-red-800':s==='high'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700';
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">Intrusion Detection & Prevention</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="p-4 border border-red-200 bg-red-50 rounded-xl">
-          <div className="flex items-center mb-3"><AlertTriangle className="w-5 h-5 text-red-600 mr-2"/><h4 className="font-semibold text-red-800">Threat Detections</h4></div>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+    <div className="space-y-4">
+      {/* Honeypot stat cards */}
+      <div className="grid grid-cols-3 gap-4">
+        {[['SSH Honeypot','Port 2222',hp.ssh,'text-purple-500',Shield],
+          ['Web Honeypot','Port 8080',hp.web,'text-blue-500',Network],
+          ['DB Honeypot','Port 3307',hp.database,'text-orange-500',Database]
+        ].map(([label,sub,count,c,Icon],i)=>(
+          <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <Icon className={`w-6 h-6 ${c}`}/>
+              {hpLoading && <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"/>}
+            </div>
+            <div className={`text-2xl font-bold ${count>0?'text-red-600':'text-gray-300'}`}>{count}</div>
+            <div className="text-sm font-medium text-gray-700">{label}</div>
+            <div className="text-xs text-gray-400">{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Live threat detections */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center mb-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 mr-2"/>
+            <h4 className="font-semibold text-red-800">Threat Detections ({threats.length})</h4>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
             {threats.length===0
-              ? <div className="text-sm text-red-700">No active threats detected</div>
-              : threats.slice(0,10).map((t,i)=>(
-                <div key={i} className="text-sm text-red-700 bg-white rounded-lg p-2 mb-1">
+              ? <div className="text-sm text-gray-400">No active threats detected</div>
+              : threats.slice(0,15).map((t,i)=>(
+                <div key={i} className="text-sm bg-red-50 rounded-lg p-2">
                   <div className="flex justify-between items-start gap-2">
-                    <span className="font-medium">{t.type||t.description||t.message||'Unknown'}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${t.severity==='critical'?'bg-red-200 text-red-800':t.severity==='high'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700'}`}>{t.severity||'low'}</span>
+                    <span className="font-medium text-red-800">{t.type||t.description||'Unknown'}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${severityClass(t.severity)}`}>{t.severity||'low'}</span>
                   </div>
                   {t.detail && <div className="text-xs text-red-500 mt-0.5 truncate">{t.detail}</div>}
                   {t.source && <div className="text-xs text-gray-400 font-mono mt-0.5">{t.source}</div>}
@@ -507,21 +544,51 @@ function IDSIPSView({ threats }) {
             }
           </div>
         </div>
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Honeypot Activity</h4>
-          <div className="space-y-2 text-sm">
-            <div className="text-gray-700">SSH Honeypot: 23 connection attempts</div>
-            <div className="text-gray-700">Web Honeypot: 15 exploit attempts</div>
-            <div className="text-gray-700">Database Honeypot: 8 queries logged</div>
+
+        {/* Live honeypot event feed */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-gray-900">Honeypot Event Feed</h4>
+            <button onClick={loadHoneypot} className="text-xs text-blue-600 hover:underline">Refresh</button>
           </div>
-          <div className="mt-3 p-2 bg-yellow-50 rounded text-xs text-yellow-800"><strong>Overmind Gate:</strong> Blocking live weaponization on all output paths</div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {(!hp.recent || hp.recent.length===0)
+              ? <div className="text-sm text-gray-400">No honeypot hits yet — listening on ports 2222, 8080, 3307</div>
+              : hp.recent.map((e,i)=>(
+                <div key={i} className="text-sm bg-gray-50 rounded-lg p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${e.honeypot_type==='ssh'?'bg-purple-100 text-purple-700':e.honeypot_type==='web'?'bg-blue-100 text-blue-700':'bg-orange-100 text-orange-700'}`}>
+                      {e.honeypot_type?.toUpperCase()}
+                    </span>
+                    <span className="font-mono text-red-600 text-xs">{e.attacker_ip}:{e.attacker_port}</span>
+                    <span className="text-xs text-gray-400">{e.created_at ? new Date(e.created_at).toLocaleTimeString() : ''}</span>
+                  </div>
+                  {e.payload && <div className="text-xs text-gray-500 mt-1 truncate font-mono">{e.payload}</div>}
+                </div>
+              ))
+            }
+          </div>
+          <div className="mt-3 p-2 bg-yellow-50 rounded text-xs text-yellow-800">
+            <strong>Overmind Gate:</strong> Blocking live weaponization · All hits saved to Kerrigan memory
+          </div>
         </div>
       </div>
-      <div className="bg-gray-50 rounded-xl p-4">
+
+      {/* IDS Rules */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
         <h4 className="font-semibold text-gray-900 mb-4">Active IDS Rules</h4>
-        <div className="space-y-2">
-          {['SQL injection pattern detection','Cross-site scripting (XSS) prevention','Buffer overflow signature matching','Suspicious outbound connections','Lateral movement detection','Privilege escalation monitoring','PQC key exposure detection','Distillation attack rate limiting'].map((rule,i)=>(
-            <div key={i} className="flex items-center justify-between p-2 bg-white rounded"><span className="text-sm text-gray-700">{rule}</span><div className="w-2 h-2 bg-green-400 rounded-full"></div></div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {['SQL injection pattern detection','Cross-site scripting (XSS) prevention',
+            'Buffer overflow signature matching','Suspicious outbound connections',
+            'Lateral movement detection','Privilege escalation monitoring',
+            'PQC key exposure detection','Distillation attack rate limiting',
+            'SSH brute force detection (port 2222)','Web exploit probe detection (port 8080)',
+            'Fake MySQL handshake logging (port 3307)','Honeypot hit → Kerrigan memory pipeline'
+          ].map((rule,i)=>(
+            <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+              <span className="text-sm text-gray-700">{rule}</span>
+              <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0"/>
+            </div>
           ))}
         </div>
       </div>
