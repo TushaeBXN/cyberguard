@@ -1067,7 +1067,7 @@ function App() {
 
   useEffect(() => {
     cg.getVersion().then(setVersion);
-    Promise.all([
+    Promise.allSettled([
       cg.getSystemStats(),
       cg.getSecurityChecks(),
       cg.getNetworkDevices(),
@@ -1076,13 +1076,13 @@ function App() {
       cg.getConnections(),
       cg.getPorts(),
     ]).then(([s, ch, dev, proc, fi, conns, ps]) => {
-      if (s)     setStats(s);
-      if (ch)    setChecks(ch);
-      if (dev)   setDevices(dev);
-      if (proc)  setProcesses(proc);
-      if (fi)    setFeedItems(fi);
-      if (conns) setConnections(conns);
-      if (ps)    setPorts(ps);
+      if (s.value)     setStats(s.value);
+      if (ch.value)    setChecks(ch.value);
+      if (dev.value)   setDevices(dev.value);
+      if (proc.value)  setProcesses(proc.value);
+      if (fi.value)    setFeedItems(fi.value);
+      if (conns.value) setConnections(conns.value);
+      if (ps.value)    setPorts(ps.value);
       setLoading(false);
     });
 
