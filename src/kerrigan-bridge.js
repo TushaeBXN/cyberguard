@@ -31,6 +31,9 @@ function start() {
     return;
   }
 
+  // Kill any stale process holding our port
+  try { require('child_process').execSync(`lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true`); } catch (_) {}
+
   serverProcess = spawn('python3', [SERVER_SCRIPT], {
     cwd:  KERRIGAN_DIR,
     env:  { ...process.env, KERRIGAN_PATH: KERRIGAN_DIR },
