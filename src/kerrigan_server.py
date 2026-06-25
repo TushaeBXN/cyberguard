@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Thin FastAPI server that wraps Kerrigan-Fantasma for CyberGuardAI.
-Runs on localhost:7432. Killed when Electron closes.
+CyberGuard AI backend — FastAPI server on localhost:7432.
+Killed when Electron closes.
 
 Endpoints:
   POST /chat   { message, history } → { reply, blocked, model }
   GET  /status → { model, memory_count, uptime_s }
   POST /hunt   { path } → { findings, risk_score }
-  POST /osint  { query } → { result }
 """
 
 import sys
@@ -33,7 +32,7 @@ try:
     from memory.creep import Creep
     KERRIGAN_AVAILABLE = True
 except Exception as e:
-    print(f"[Server] Kerrigan modules not fully available: {e}")
+    print(f"[Server] AI modules not fully available: {e}")
     KERRIGAN_AVAILABLE = False
 
 try:
@@ -42,7 +41,7 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
-app       = FastAPI(title="Kerrigan Server")
+app       = FastAPI(title="CyberGuard AI Server")
 _start    = time.time()
 _router   = None
 _overmind = None
@@ -69,7 +68,7 @@ def _init():
 @app.on_event("startup")
 async def on_startup():
     _init()
-    print("Kerrigan server ready", flush=True)
+    print("CyberGuard AI server ready", flush=True)
 
 
 @app.post("/chat")
@@ -97,10 +96,10 @@ async def chat(request: Request):
 
     # Build prompt
     system = (
-        "You are Kerrigan, a custom security AI built by Brian Tushae Thomas. "
+        "You are CyberGuard AI, a security intelligence assistant built by Brian Tushae Thomas. "
         "You specialize in vulnerability research, exploit analysis, hardware security, "
-        "and defensive tooling. You are running inside CyberGuardAI. "
-        "Be concise and technical. For educational and authorized security research only."
+        "and defensive tooling. Be concise and technical. "
+        "For educational and authorized security research only."
     )
 
     messages = [{"role": "system", "content": system + context}]
@@ -140,7 +139,7 @@ async def status():
         "model":        _model,
         "memory_count": mem_count,
         "uptime_s":     round(time.time() - _start, 1),
-        "kerrigan_ok":  KERRIGAN_AVAILABLE,
+        "ai_ok":        KERRIGAN_AVAILABLE,
         "ollama_ok":    OLLAMA_AVAILABLE,
     }
 

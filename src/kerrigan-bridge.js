@@ -39,7 +39,7 @@ function start() {
 
   serverProcess.stdout.on('data', (d) => {
     const line = d.toString().trim();
-    if (line.includes('Kerrigan server ready')) _ready = true;
+    if (line.includes('CyberGuard AI server ready')) _ready = true;
     console.log('[Kerrigan]', line);
   });
   serverProcess.stderr.on('data', (d) => console.error('[Kerrigan]', d.toString().trim()));
