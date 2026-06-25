@@ -402,6 +402,210 @@ async def hunt(request: Request):
         return {"error": str(e), "findings": [], "risk_score": 0}
 
 
+# ── Real Pen Testing ──────────────────────────────────────────────────────────
+
+@app.get("/pentest/headers")
+async def pentest_headers(url: str = "http://localhost"):
+    import requests as req
+    results = []
+    try:
+        r = req.get(url, timeout=5, verify=False, allow_redirects=True)
+        headers = r.headers
+        checks = [
+            ("Strict-Transport-Security", "HSTS", "Forces HTTPS connections"),
+            ("X-Frame-Options", "Clickjacking", "Prevents iframe embedding"),
+            ("X-Content-Type-Options", "MIME Sniff", "Blocks MIME type sniffing"),
+            ("Content-Security-Policy", "CSP", "Controls resource loading"),
+            ("X-XSS-Protection", "XSS Filter", "Legacy XSS filter"),
+            ("Referrer-Policy", "Referrer", "Controls referrer info"),
+            ("Permissions-Policy", "Permissions", "Controls browser features"),
+        ]
+        for hdr, name, desc in checks:
+            present = hdr in headers
+            results.append({
+                "header": hdr, "name": name, "desc": desc,
+                "present": present, "value": headers.get(hdr, ""),
+                "status": "pass" if present else "fail"
+            })
+        return {"url": url, "status_code": r.status_code, "checks": results, "server": headers.get("Server","unknown")}
+    except Exception as e:
+        return {"url": url, "error": str(e), "checks": results}
+
+
+@app.post("/pentest/portscan")
+async def pentest_portscan(request: Request):
+    body   = await request.json()
+    target = body.get("target", "127.0.0.1")
+    ports  = body.get("ports", [21,22,23,25,53,80,443,3306,3307,5432,6379,8080,8443,27017])
+    open_ports = []
+    async def check(port):
+        try:
+            conn = asyncio.open_connection(target, port)
+            r, w = await asyncio.wait_for(conn, timeout=1.0)
+            banner = ""
+            try: banner = (await asyncio.wait_for(r.read(256), timeout=1.0)).decode("utf-8","replace").strip()[:80]
+            except: pass
+            w.close()
+            return {"port": port, "state": "open", "banner": banner}
+        except: return {"port": port, "state": "closed", "banner": ""}
+    results = await asyncio.gather(*[check(p) for p in ports])
+    open_ports = [r for r in results if r["state"] == "open"]
+    return {"target": target, "scanned": len(ports), "open": open_ports, "open_count": len(open_ports)}
+
+
+@app.get("/pentest/ssl")
+async def pentest_ssl(host: str = "localhost", port: int = 443):
+    import subprocess
+    try:
+        cmd = ["openssl", "s_client", "-connect", f"{host}:{port}", "-brief"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=8,
+                          input="Q\n")
+        output = r.stdout + r.stderr
+        checks = []
+        checks.append({"check":"Connection","status":"pass" if "CONNECTED" in output else "fail","detail":""})
+        checks.append({"check":"TLS 1.3","status":"pass" if "TLSv1.3" in output else "warn","detail":output.split("Protocol")[1][:20].strip() if "Protocol" in output else ""})
+        checks.append({"check":"Certificate","status":"pass" if "Verification" in output else "warn","detail":""})
+        for weak in ["RC4","DES","NULL","EXPORT","MD5","SSLv2","SSLv3"]:
+            if weak in output:
+                checks.append({"check":f"Weak cipher: {weak}","status":"fail","detail":f"{weak} detected in negotiation"})
+        return {"host": host, "port": port, "checks": checks, "raw": output[:500]}
+    except Exception as e:
+        return {"host": host, "port": port, "checks": [], "error": str(e)}
+
+
+@app.get("/pentest/ssh-audit")
+async def pentest_ssh_audit():
+    import subprocess, glob
+    results = []
+    ssh_dir = Path.home() / ".ssh"
+    if not ssh_dir.exists():
+        return {"keys": [], "error": "No ~/.ssh directory found"}
+    for f in ssh_dir.iterdir():
+        if f.suffix in (".pub",) or f.name in ("known_hosts","authorized_keys","config"):
+            continue
+        if not f.is_file(): continue
+        try:
+            r = subprocess.run(["ssh-keygen","-l","-f",str(f)], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                parts = r.stdout.strip().split()
+                bits = int(parts[0]) if parts else 0
+                key_type = parts[-1].strip("()") if parts else "unknown"
+                status = "pass" if bits >= 3072 or key_type in ("ED25519","ECDSA") else "warn" if bits >= 2048 else "fail"
+                results.append({"file": f.name, "bits": bits, "type": key_type, "status": status,
+                               "fingerprint": parts[1] if len(parts)>1 else ""})
+        except Exception as e:
+            results.append({"file": f.name, "bits": 0, "type": "unknown", "status": "warn", "error": str(e)})
+    pub_keys = list(ssh_dir.glob("*.pub"))
+    return {"keys": results, "key_count": len(results), "pubkey_count": len(pub_keys), "ssh_dir": str(ssh_dir)}
+
+
+# ── Real Network Map ───────────────────────────────────────────────────────────
+
+@app.get("/network/arp")
+async def network_arp():
+    import subprocess, re
+    try:
+        r = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=10)
+        devices = []
+        for line in r.stdout.splitlines():
+            m = re.match(r'\?\s+\(([^)]+)\)\s+at\s+(\S+)\s+on\s+(\S+)', line)
+            if not m: continue
+            ip, mac, iface = m.group(1), m.group(2), m.group(3)
+            if mac == "(incomplete)": continue
+            devices.append({"ip": ip, "mac": mac, "interface": iface, "name": ip})
+        return {"devices": devices, "count": len(devices)}
+    except Exception as e:
+        return {"devices": [], "error": str(e)}
+
+@app.get("/network/routes")
+async def network_routes():
+    import subprocess, re
+    try:
+        r = subprocess.run(["netstat", "-rn"], capture_output=True, text=True, timeout=10)
+        routes = []
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 4 and re.match(r'\d+\.\d+', parts[0]):
+                routes.append({"destination": parts[0], "gateway": parts[1], "flags": parts[2], "interface": parts[3] if len(parts)>3 else ""})
+        return {"routes": routes[:30]}
+    except Exception as e:
+        return {"routes": [], "error": str(e)}
+
+
+# ── Real CVE Lookup ────────────────────────────────────────────────────────────
+
+@app.get("/scan/cve")
+async def scan_cve(q: str = "macos"):
+    import requests as req
+    try:
+        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={q}&resultsPerPage=10"
+        r = req.get(url, timeout=10, headers={"User-Agent": "CyberGuardAI/1.0"})
+        data = r.json()
+        vulns = []
+        for item in data.get("vulnerabilities", []):
+            cve  = item.get("cve", {})
+            cvss = 0
+            metrics = cve.get("metrics", {})
+            for key in ["cvssMetricV31","cvssMetricV30","cvssMetricV2"]:
+                if key in metrics and metrics[key]:
+                    cvss = metrics[key][0].get("cvssData",{}).get("baseScore", 0)
+                    break
+            desc = ""
+            for d in cve.get("descriptions", []):
+                if d.get("lang") == "en": desc = d.get("value",""); break
+            vulns.append({
+                "id": cve.get("id",""),
+                "score": cvss,
+                "severity": "critical" if cvss>=9 else "high" if cvss>=7 else "medium" if cvss>=4 else "low",
+                "description": desc[:200],
+                "published": cve.get("published","")[:10],
+            })
+        return {"query": q, "total": data.get("totalResults", 0), "vulns": vulns}
+    except Exception as e:
+        return {"query": q, "total": 0, "vulns": [], "error": str(e)}
+
+
+# ── Real AI Patcher Status ─────────────────────────────────────────────────────
+
+@app.get("/patcher/status")
+async def patcher_status():
+    import glob
+    stage4_count = len(list(Path(KERRIGAN_DIR).glob("data/stage4/*.jsonl")))
+    stage4_examples = 0
+    for f in Path(KERRIGAN_DIR).glob("data/stage4/*.jsonl"):
+        try: stage4_examples += sum(1 for _ in open(f))
+        except: pass
+    adaptive_rules = 0
+    adaptive_path = Path(KERRIGAN_DIR) / "data" / "adaptive_defense.jsonl"
+    if adaptive_path.exists():
+        try: adaptive_rules = sum(1 for _ in open(adaptive_path))
+        except: pass
+    conn = _get_db()
+    db_crashes, db_sessions, total_crashes = 0, 0, 0
+    if conn:
+        try:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT COUNT(*) as n FROM crashes")
+            db_crashes = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(*) as n FROM sessions")
+            db_sessions = cur.fetchone()["n"]
+            cur.execute("SELECT COALESCE(SUM(total_crashes),0) as n FROM sessions")
+            total_crashes = cur.fetchone()["n"] or 0
+        except: pass
+        finally: conn.close()
+    pqc_ok = (Path(KERRIGAN_DIR) / "keys").exists()
+    return {
+        "stage4_files": stage4_count,
+        "stage4_examples": stage4_examples,
+        "adaptive_rules": adaptive_rules,
+        "db_crashes": db_crashes,
+        "db_sessions": db_sessions,
+        "total_crashes_found": int(total_crashes),
+        "pqc_keys_exist": pqc_ok,
+        "kerrigan_available": KERRIGAN_AVAILABLE,
+    }
+
+
 @app.get("/honeypot/counts")
 async def honeypot_counts():
     conn = _get_db()

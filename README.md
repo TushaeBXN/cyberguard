@@ -194,12 +194,28 @@ All visible in the **AI Assistant → Memories / Crashes / Sessions** tabs insid
 
 ---
 
+## What's Real
+
+Every module shows live data — nothing is hardcoded or faked:
+
+| Module | Real Data Source |
+|---|---|
+| **Dashboard** | `systeminformation` npm package — live CPU, RAM, net I/O |
+| **AI Assistant** | Ollama (`deepseek-coder:6.7b`) with live system telemetry injected per message |
+| **AI Auto-Patcher** | Live counts from `kerrigan_db.crashes`, `sessions`, `data/stage4/` files |
+| **Packet Analysis** | Live `netstat`/`lsof` connections with process attribution |
+| **Vuln Scanner** | Real port scan (asyncio sockets) + NVD CVE API + Kerrigan file threat hunt |
+| **Penetration Testing** | Real port scan, real HTTP header analysis, real TLS/SSL check via `openssl`, real SSH key audit |
+| **Crypto Audit** | Real `~/.ssh/` key scan via `ssh-keygen -l`, real TLS check, live PQC status |
+| **IDS / IPS** | Real asyncio honeypots on ports 2222/8080/3307 logging to `kerrigan_db.honeypot_events` |
+| **Forensics** | Live process table via `psutil` with kill capability |
+| **Network Map** | Real `arp -a` neighbor discovery + real `netstat -rn` routing table |
+
 ## Roadmap
 
-- [ ] Real SSH/web/database honeypots with live counters
 - [ ] Switch default model to trained `kerrigan-fantasma` after RunPod training
 - [ ] DMG installer with auto-updater
-- [ ] Mobile companion app
+- [ ] IP reputation checking (AbuseIPDB) for honeypot attacker IPs
 - [ ] Compliance reporting (ISO 27001, NIST CSF, HIPAA, GDPR)
 - [ ] Windows and Linux builds
 

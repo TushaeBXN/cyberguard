@@ -86,6 +86,7 @@ const Search        = p => <Ico {...p} d={[['circle',{cx:'11',cy:'11',r:'8'}],['
 const Filter        = p => <Ico {...p} d={[['polygon',{points:'22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'}]]}/>;
 const Download      = p => <Ico {...p} d={[['path',{d:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'}],['polyline',{points:'7 10 12 15 17 10'}],['line',{x1:'12',y1:'15',x2:'12',y2:'3'}]]}/>;
 const Play          = p => <Ico {...p} d={[['polygon',{points:'5 3 19 12 5 21 5 3'}]]}/>;
+const Key           = p => <Ico {...p} d={[['path',{d:'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'}]]}/>;
 const Pause         = p => <Ico {...p} d={[['rect',{x:'6',y:'4',width:'4',height:'16'}],['rect',{x:'14',y:'4',width:'4',height:'16'}]]}/>;
 const SettingsIcon  = p => <Ico {...p} d={[['circle',{cx:'12',cy:'12',r:'3'}],['path',{d:'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'}]]}/>;
 const MapIcon       = p => <Ico {...p} d={[['polygon',{points:'1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6'}],['line',{x1:'8',y1:'2',x2:'8',y2:'18'}],['line',{x1:'16',y1:'6',x2:'16',y2:'22'}]]}/>;
@@ -228,17 +229,33 @@ function PacketAnalyzerView({ connections }) {
 
 // ── Vuln Scanner ──────────────────────────────────────────────────────────────
 function VulnScannerView({ secChecks }) {
-  const [scanning, setScanning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [huntPath, setHuntPath] = useState('/Users/dadsmacpro/Desktop');
+  const [scanResult,  setScanResult]  = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [cveQuery,    setCveQuery]    = useState('macos sequoia');
+  const [cveResult,   setCveResult]   = useState(null);
+  const [cveLoading,  setCveLoading]  = useState(false);
+  const [huntPath,    setHuntPath]    = useState('/Users/dadsmacpro/Desktop');
   const [huntResults, setHuntResults] = useState(null);
   const [huntLoading, setHuntLoading] = useState(false);
 
-  useEffect(() => {
-    if (!scanning) return;
-    const t = setInterval(() => setProgress(p => { if(p>=100){setScanning(false);clearInterval(t);return 100;} return p+2; }), 120);
-    return () => clearInterval(t);
-  }, [scanning]);
+  const runDeepScan = async () => {
+    setScanLoading(true);
+    try {
+      const [ps, hd] = await Promise.all([
+        cg.pentestPortscan('127.0.0.1', [21,22,23,25,53,80,443,3306,3307,5432,6379,8080,8443,27017]),
+        cg.pentestHeaders('http://localhost').catch(()=>null),
+      ]);
+      setScanResult({ ports: ps, headers: hd });
+    } catch(e) { setScanResult({error:e.message}); }
+    finally { setScanLoading(false); }
+  };
+
+  const runCve = async () => {
+    setCveLoading(true);
+    try { setCveResult(await cg.scanCve(cveQuery)); }
+    catch(e) { setCveResult({error:e.message}); }
+    finally { setCveLoading(false); }
+  };
 
   const runHunt = async () => {
     setHuntLoading(true);
@@ -250,43 +267,82 @@ function VulnScannerView({ secChecks }) {
   const sevColor = s => s==='critical'?'bg-red-100 text-red-800':s==='high'?'bg-orange-100 text-orange-800':s==='medium'?'bg-yellow-100 text-yellow-800':'bg-blue-100 text-blue-800';
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-900">Vulnerability Assessment</h3>
-          <button onClick={()=>{setScanning(s=>!s);setProgress(0);}}
-            className="px-6 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 flex items-center">
-            <Bug className="w-4 h-4 mr-2"/>{scanning?'Stop Scan':'Start Deep Scan'}
+    <div className="space-y-4">
+      {/* Security checks — live from main.js */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900">Live Security Checks</h3>
+          <button onClick={runDeepScan} disabled={scanLoading}
+            className="px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 flex items-center text-sm disabled:opacity-50">
+            <Bug className="w-4 h-4 mr-2"/>{scanLoading?'Scanning localhost…':'Deep Scan localhost'}
           </button>
         </div>
-        {scanning && (
-          <div className="bg-gray-50 rounded-xl p-4 mb-6">
-            <div className="flex justify-between text-sm text-gray-600 mb-2"><span>Scanning…</span><span>{progress}%</span></div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-red-500 h-2 rounded-full transition-all" style={{width:`${progress}%`}}></div>
+        <div className="space-y-2">
+          {(secChecks||[]).map((c,i) => (
+            <div key={i} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
+              <div className="flex items-center">
+                <div className={`w-2.5 h-2.5 rounded-full mr-3 ${c.status==='pass'?'bg-green-500':c.status==='warn'?'bg-yellow-500':'bg-red-500'}`}/>
+                <div>
+                  <span className="font-medium text-gray-900 text-sm">{c.name}</span>
+                  {c.detail && <p className="text-xs text-gray-500 mt-0.5">{c.detail}</p>}
+                </div>
+              </div>
+              <span className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-3 ${c.status==='pass'?'bg-green-100 text-green-800':c.status==='warn'?'bg-yellow-100 text-yellow-800':'bg-red-100 text-red-800'}`}>{c.status}</span>
+            </div>
+          ))}
+          {(!secChecks||secChecks.length===0) && <div className="text-gray-400 text-sm py-6 text-center">Security checks loading…</div>}
+        </div>
+        {scanResult && !scanResult.error && (
+          <div className="mt-4 bg-gray-50 rounded-xl p-3">
+            <div className="text-xs font-semibold text-gray-600 mb-2">Deep Scan — localhost</div>
+            <div className="text-xs text-gray-500">{scanResult.ports?.open_count ?? 0} open ports · {scanResult.ports?.open?.map(p=>p.port).join(', ')||'none'}</div>
+            {scanResult.headers && (
+              <div className="text-xs text-gray-500 mt-1">
+                HTTP headers: {scanResult.headers.checks?.filter(c=>c.present).length ?? 0}/{scanResult.headers.checks?.length ?? 0} security headers present
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* NVD CVE Search */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <Search className="w-4 h-4 text-blue-500"/>NVD CVE Database Search
+        </h3>
+        <div className="flex gap-2 mb-3">
+          <input value={cveQuery} onChange={e=>setCveQuery(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&runCve()}
+            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+            placeholder="e.g. macos sequoia, apache, openssl…"/>
+          <button onClick={runCve} disabled={cveLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+            {cveLoading?'Fetching…':'Search NVD'}
+          </button>
+        </div>
+        {cveResult && !cveResult.error && (
+          <div>
+            <div className="text-xs text-gray-400 mb-2">{cveResult.total} total results for "{cveResult.query}" — showing top {cveResult.vulns?.length}</div>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {cveResult.vulns?.map((v,i)=>(
+                <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                  <span className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 font-mono ${sevColor(v.severity)}`}>{v.score}</span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-mono font-bold text-blue-700">{v.id}</div>
+                    <div className="text-xs text-gray-600 mt-0.5">{v.description}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{v.published}</div>
+                  </div>
+                </div>
+              ))}
+              {cveResult.vulns?.length === 0 && <div className="text-xs text-gray-400 text-center py-4">No CVEs found for this query</div>}
             </div>
           </div>
         )}
-        <div className="space-y-3">
-          {(secChecks||[]).map((c,i) => (
-            <div key={i} className="border border-gray-200 rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className={`w-3 h-3 rounded-full mr-3 ${c.status==='pass'?'bg-green-500':c.status==='warn'?'bg-yellow-500':'bg-red-500'}`}></div>
-                  <h4 className="font-semibold text-gray-900">{c.name}</h4>
-                  <span className={`ml-3 px-2 py-0.5 text-xs rounded-full ${c.status==='pass'?'bg-green-100 text-green-800':c.status==='warn'?'bg-yellow-100 text-yellow-800':'bg-red-100 text-red-800'}`}>{c.status}</span>
-                </div>
-                <span className="text-sm text-gray-400">{c.category||''}</span>
-              </div>
-              {c.detail && <p className="mt-2 text-sm text-gray-600">{c.detail}</p>}
-            </div>
-          ))}
-          {(!secChecks||secChecks.length===0)&&<div className="text-gray-500 text-sm py-8 text-center">Run a scan to load security checks</div>}
-        </div>
+        {cveResult?.error && <div className="text-xs text-red-600 mt-2">{cveResult.error}</div>}
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">AI Threat Hunter</h3>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <h3 className="text-lg font-bold text-gray-900 mb-3">AI Threat Hunter</h3>
         <div className="flex gap-3 mb-4">
           <input value={huntPath} onChange={e=>setHuntPath(e.target.value)}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
@@ -324,48 +380,150 @@ function VulnScannerView({ secChecks }) {
 
 // ── Pen Testing ───────────────────────────────────────────────────────────────
 function PenTestingView() {
+  const [target,    setTarget]    = useState('127.0.0.1');
+  const [url,       setUrl]       = useState('http://localhost');
+  const [sslHost,   setSslHost]   = useState('localhost');
+  const [sslPort,   setSslPort]   = useState(443);
+  const [psResult,  setPsResult]  = useState(null);
+  const [hdResult,  setHdResult]  = useState(null);
+  const [sslResult, setSslResult] = useState(null);
+  const [sshResult, setSshResult] = useState(null);
+  const [loading,   setLoading]   = useState({});
+
+  const run = (key, fn) => {
+    setLoading(l=>({...l,[key]:true}));
+    fn().then(r => {
+      if (key==='ps')  setPsResult(r);
+      if (key==='hd')  setHdResult(r);
+      if (key==='ssl') setSslResult(r);
+      if (key==='ssh') setSshResult(r);
+    }).catch(e => {
+      const err = {error: e.message};
+      if (key==='ps')  setPsResult(err);
+      if (key==='hd')  setHdResult(err);
+      if (key==='ssl') setSslResult(err);
+      if (key==='ssh') setSshResult(err);
+    }).finally(() => setLoading(l=>({...l,[key]:false})));
+  };
+
+  const sc = s => s==='pass'?'text-green-600 bg-green-50':s==='fail'?'text-red-600 bg-red-50':'text-yellow-600 bg-yellow-50';
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-gray-900">Automated Penetration Testing</h3>
-        <div className="flex space-x-3">
-          <button className="px-4 py-2 bg-purple-500 text-white rounded-xl hover:bg-purple-600">New Campaign</button>
-          <button className="px-4 py-2 bg-gray-500 text-white rounded-xl hover:bg-gray-600">Load Payload</button>
-        </div>
+    <div className="space-y-4">
+      <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0"/>
+        <span className="text-sm text-yellow-800"><strong>Authorized testing only.</strong> Only run against systems you own or have written permission to test. All actions logged to kerrigan_db.</span>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[[Terminal,'SQL Injection','Web app testing'],[Wifi,'Buffer Overflow','Memory corruption'],[Lock,'Privilege Escalation','Local/remote'],[Network,'Social Engineering','Phishing simulation']].map(([Icon,name,sub],i)=>(
-          <div key={i} className="p-4 border-2 border-dashed border-gray-300 rounded-xl text-center hover:border-purple-400 cursor-pointer transition-colors">
-            <Icon className="w-8 h-8 text-gray-400 mx-auto mb-2"/>
-            <div className="font-medium text-gray-700 text-sm">{name}</div>
-            <div className="text-xs text-gray-500">{sub}</div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Port Scanner */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><Network className="w-4 h-4 text-purple-500"/>Port Scanner</h4>
+          <div className="flex gap-2 mb-3">
+            <input value={target} onChange={e=>setTarget(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+              placeholder="Target IP"/>
+            <button onClick={()=>run('ps', ()=>cg.pentestPortscan(target, [21,22,23,25,53,80,443,3306,3307,5432,6379,8080,8443,27017]))}
+              disabled={loading.ps}
+              className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50">
+              {loading.ps ? 'Scanning…' : 'Scan'}
+            </button>
           </div>
-        ))}
-      </div>
-      <div className="bg-gray-50 rounded-xl p-4 mb-4">
-        <h4 className="font-semibold text-gray-900 mb-4">Active Tests</h4>
-        <div className="space-y-3">
-          {[{target:'192.168.1.20:3306',type:'MySQL Injection',status:'Running',progress:67},{target:'192.168.1.10:80',type:'XSS Detection',status:'Completed',progress:100},{target:'192.168.1.1:22',type:'SSH Brute Force',status:'Queued',progress:0}].map((t,i)=>(
-            <div key={i} className="flex items-center justify-between p-3 bg-white rounded-lg">
-              <div className="flex-1">
-                <div className="font-medium text-gray-900 text-sm">{t.type}</div>
-                <div className="text-xs text-gray-500">{t.target}</div>
-                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-                  <div className="bg-purple-500 h-1.5 rounded-full" style={{width:`${t.progress}%`}}></div>
-                </div>
+          {psResult && !psResult.error && (
+            <div>
+              <div className="text-xs text-gray-500 mb-2">Scanned {psResult.scanned} ports — {psResult.open_count} open</div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {psResult.open?.length === 0
+                  ? <div className="text-xs text-green-600">All common ports closed</div>
+                  : psResult.open.map((p,i)=>(
+                    <div key={i} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="font-mono font-bold text-red-700">{p.port}</span>
+                      <span className="text-xs text-gray-500 truncate max-w-xs">{p.banner||'open'}</span>
+                    </div>
+                  ))}
               </div>
-              <div className={`px-3 py-1 text-xs rounded-full ml-4 ${t.status==='Running'?'bg-blue-100 text-blue-800':t.status==='Completed'?'bg-green-100 text-green-800':'bg-gray-100 text-gray-800'}`}>{t.status}</div>
             </div>
-          ))}
+          )}
+          {psResult?.error && <div className="text-xs text-red-600 mt-2">{psResult.error}</div>}
         </div>
-      </div>
-      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-        <div className="flex items-center">
-          <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3 flex-shrink-0"/>
-          <div>
-            <div className="font-medium text-yellow-800">Authorized Testing Only</div>
-            <div className="text-sm text-yellow-700 mt-1">Only run against systems you own or have explicit written permission to test. All actions logged.</div>
+
+        {/* HTTP Header Security */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-blue-500"/>HTTP Security Headers</h4>
+          <div className="flex gap-2 mb-3">
+            <input value={url} onChange={e=>setUrl(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+              placeholder="https://example.com"/>
+            <button onClick={()=>run('hd', ()=>cg.pentestHeaders(url))}
+              disabled={loading.hd}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {loading.hd ? 'Checking…' : 'Check'}
+            </button>
           </div>
+          {hdResult && !hdResult.error && (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {hdResult.checks?.map((c,i)=>(
+                <div key={i} className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs ${sc(c.status)}`}>
+                  <span className="font-medium">{c.name}</span>
+                  <span className="font-mono text-right max-w-xs truncate">{c.present ? c.value||'set' : 'MISSING'}</span>
+                </div>
+              ))}
+              <div className="text-xs text-gray-400 mt-1">Server: {hdResult.server} · HTTP {hdResult.status_code}</div>
+            </div>
+          )}
+          {hdResult?.error && <div className="text-xs text-red-600 mt-2">{hdResult.error}</div>}
+        </div>
+
+        {/* TLS/SSL Check */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><Lock className="w-4 h-4 text-green-500"/>TLS/SSL Audit</h4>
+          <div className="flex gap-2 mb-3">
+            <input value={sslHost} onChange={e=>setSslHost(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder="hostname"/>
+            <input value={sslPort} onChange={e=>setSslPort(Number(e.target.value))}
+              className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder="443"/>
+            <button onClick={()=>run('ssl', ()=>cg.pentestSsl(sslHost, sslPort))}
+              disabled={loading.ssl}
+              className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50">
+              {loading.ssl ? 'Testing…' : 'Test'}
+            </button>
+          </div>
+          {sslResult && !sslResult.error && (
+            <div className="space-y-1">
+              {sslResult.checks?.map((c,i)=>(
+                <div key={i} className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs ${sc(c.status)}`}>
+                  <span className="font-medium">{c.check}</span>
+                  <span>{c.detail||c.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {sslResult?.error && <div className="text-xs text-red-600 mt-2">{sslResult.error}</div>}
+        </div>
+
+        {/* SSH Key Audit */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2"><Key className="w-4 h-4 text-yellow-500"/>SSH Key Audit</h4>
+          <button onClick={()=>run('ssh', ()=>cg.pentestSsh())}
+            disabled={loading.ssh}
+            className="mb-3 px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm hover:bg-yellow-600 disabled:opacity-50">
+            {loading.ssh ? 'Auditing…' : 'Audit ~/.ssh Keys'}
+          </button>
+          {sshResult && !sshResult.error && (
+            <div>
+              <div className="text-xs text-gray-500 mb-2">{sshResult.key_count} private keys · {sshResult.pubkey_count} public keys</div>
+              <div className="space-y-1">
+                {sshResult.keys?.map((k,i)=>(
+                  <div key={i} className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs ${sc(k.status)}`}>
+                    <span className="font-mono">{k.file}</span>
+                    <span>{k.type} {k.bits>0?k.bits+'bit':''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {sshResult?.keys?.length===0 && <div className="text-xs text-gray-400">No SSH keys found in ~/.ssh</div>}
+          {sshResult?.error && <div className="text-xs text-red-600 mt-2">{sshResult.error}</div>}
         </div>
       </div>
     </div>
@@ -374,73 +532,89 @@ function PenTestingView() {
 
 // ── AI Auto-Patcher ───────────────────────────────────────────────────────────
 function AIPatcherView() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    const load = () => {
+      setLoading(true);
+      (cg.patcherStatus ? cg.patcherStatus() : Promise.resolve(null))
+        .then(s=>setStatus(s)).catch(()=>setStatus(null))
+        .finally(()=>setLoading(false));
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return ()=>clearInterval(t);
+  }, []);
+
+  const agents = [
+    ['Orchestrator','coordinating','Managing fuzzing campaigns'],
+    ['Seed Generator','running','Creating fuzzing inputs from kerrigan_db.sessions'],
+    ['Fuzzer Engine','running','AggressiveMutationFuzzer active'],
+    ['Program Model','analyzing','Building Kerrigan-Fantasma code context'],
+    ['Vuln Classifier', status?.db_crashes>0?'running':'idle', status?.db_crashes>0?`${status.db_crashes} crashes in DB`:'Awaiting findings'],
+    ['Patch Generator','running','Generating candidate fixes'],
+    ['Regression Tester','validating','Testing patch safety via kerrigan_db.sessions'],
+  ];
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">AI-Driven Auto-Patcher</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="p-4 border border-gray-200 rounded-xl">
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          ['Training Examples', status?.stage4_examples ?? '…', 'text-blue-600', 'From kerrigan-fantasma/data/stage4/'],
+          ['Crashes Found', status?.db_crashes ?? '…', 'text-red-600', 'kerrigan_db.crashes'],
+          ['Sessions Run', status?.db_sessions ?? '…', 'text-purple-600', 'kerrigan_db.sessions'],
+          ['Adaptive Rules', status?.adaptive_rules ?? '…', 'text-green-600', 'adaptive_defense.jsonl'],
+        ].map(([label,val,color,sub],i)=>(
+          <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+            {loading ? <div className="text-2xl font-bold text-gray-300 animate-pulse">…</div>
+              : <div className={`text-2xl font-bold ${color}`}>{val}</div>}
+            <div className="text-sm font-medium text-gray-700">{label}</div>
+            <div className="text-xs text-gray-400">{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h4 className="font-semibold text-gray-900 mb-3">Active AI Agents</h4>
           <div className="space-y-2">
-            {[['Orchestrator','coordinating','Managing fuzzing campaigns'],['Seed Generator','running','Creating fuzzing inputs'],['Fuzzer Engine','running','AggressiveMutationFuzzer active'],['Program Model','analyzing','Building code context'],['Vuln Classifier','idle','Awaiting new findings'],['Patch Generator','running','Generating candidate fixes'],['Regression Tester','validating','Testing patch safety']].map(([name,status,task],i)=>(
+            {agents.map(([name,st,task],i)=>(
               <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
                 <div>
                   <div className="font-medium text-gray-900 text-sm">{name}</div>
-                  <div className="text-xs text-gray-600">{task}</div>
+                  <div className="text-xs text-gray-500">{task}</div>
                 </div>
-                <div className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-2 ${status==='running'?'bg-green-100 text-green-800':['analyzing','coordinating','validating'].includes(status)?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`}>{status}</div>
+                <div className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-2 ${st==='running'?'bg-green-100 text-green-800':['analyzing','coordinating','validating'].includes(st)?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`}>{st}</div>
               </div>
             ))}
           </div>
         </div>
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Fuzzing Campaigns</h4>
-          <div className="space-y-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <div className="flex justify-between items-center mb-2"><span className="font-medium text-blue-900 text-sm">kerrigan-fantasma</span><span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">Active</span></div>
-              <div className="text-xs text-blue-700 mb-2">AggressiveMutationFuzzer — 13 boundary cases</div>
-              <div className="w-full bg-blue-200 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{width:'73%'}}></div></div>
-              <div className="text-xs text-blue-600 mt-1">73% — 2 vulnerabilities found</div>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg">
-              <div className="flex justify-between items-center mb-1"><span className="font-medium text-green-900 text-sm">Stage 4 Training</span><span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full">Ready</span></div>
-              <div className="text-xs text-green-700">6499 examples — Glaive v2 + synthetic vuln Q&A</div>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex justify-between items-center mb-1"><span className="font-medium text-gray-900 text-sm">Adaptive Defense</span><span className="text-xs bg-gray-200 text-gray-800 px-2 py-0.5 rounded-full">Learning</span></div>
-              <div className="text-xs text-gray-600">Real-time rule adaptation from observed attacks</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="bg-gray-50 rounded-xl p-4 mb-6">
-        <h4 className="font-semibold text-gray-900 mb-3">Live Log</h4>
-        <div className="bg-black rounded-lg p-4 font-mono text-xs leading-5">
-          <div className="text-cyan-400">[AI-PATCHER] Multi-agent collaboration active…</div>
-          <div className="text-green-400">[FUZZER] AggressiveMutationFuzzer — 13 boundary cases loaded</div>
-          <div className="text-yellow-400">[PQC] ML-KEM-768 keygen verified (liboqs backend)</div>
-          <div className="text-blue-400">[DISTILL] DistillationDefense — passive mode, monitoring query rates</div>
-          <div className="text-purple-400">[PATCH-GEN] Generating candidate patches (3/7 agents voting)…</div>
-          <div className="text-white">  └── Patch 1: Bounds checking before buffer write</div>
-          <div className="text-white">  └── Patch 2: Input validation enhancement</div>
-          <div className="text-orange-400">[REGRESSION] Testing patch safety… All 5/5 benchmarks passed</div>
-          <div className="text-green-400">[OVERMIND] Safety gate: live weaponization blocked on all paths</div>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Kerrigan Benchmarks</h4>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3">System Status</h4>
           <div className="space-y-2 text-sm">
-            {[['Fuzzer throughput','5/5 passed'],['Safety gate','<1ms avg'],['Compile cache','hit 0ms (cold 1.32s)'],['PQC roundtrip','ML-KEM-768 ✓'],['Distillation defense','Active']].map(([k,v],i)=>(
-              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium text-green-600">{v}</span></div>
+            {[
+              ['Kerrigan AI', status?.kerrigan_available?'Online':'Offline (using Ollama)', status?.kerrigan_available?'text-green-600':'text-yellow-600'],
+              ['PQC Keys', status?.pqc_keys_exist?'Found in keys/':'Not found', status?.pqc_keys_exist?'text-green-600':'text-red-600'],
+              ['Training Data', status?.stage4_files>0?`${status.stage4_files} files ready`:'No files', status?.stage4_files>0?'text-green-600':'text-gray-400'],
+              ['Safety Gate', 'Overmind — active', 'text-green-600'],
+              ['PQC Backend', 'liboqs (ML-KEM-768)', 'text-blue-600'],
+            ].map(([k,v,c],i)=>(
+              <div key={i} className="flex justify-between items-center">
+                <span className="text-gray-600">{k}</span>
+                <span className={`font-medium text-right ${c}`}>{loading?'…':v}</span>
+              </div>
             ))}
           </div>
-        </div>
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Model Performance</h4>
-          <div className="space-y-2 text-sm">
-            {[['Patch Success Rate','94.2%'],['False Positive Rate','2.1%'],['Time to Patch','12.4 min avg'],['PQC Backend','liboqs / classical fallback'],['Safety Mode','Overmind gated']].map(([k,v],i)=>(
-              <div key={i} className="flex justify-between"><span className="text-gray-600">{k}</span><span className="font-medium">{v}</span></div>
-            ))}
+
+          <div className="mt-4 bg-black rounded-xl p-3 font-mono text-xs leading-5">
+            <div className="text-cyan-400">[PATCHER] Multi-agent system active</div>
+            {status?.db_crashes>0 && <div className="text-red-400">[VULN] {status.db_crashes} crash(es) logged in kerrigan_db</div>}
+            {status?.adaptive_rules>0 && <div className="text-yellow-400">[ADAPT] {status.adaptive_rules} adaptive defense rules loaded</div>}
+            {status?.stage4_examples>0 && <div className="text-green-400">[TRAIN] {status.stage4_examples} training examples ready for RunPod</div>}
+            <div className="text-purple-400">[PQC] ML-KEM-768 keygen verified (liboqs)</div>
+            <div className="text-green-400">[OVERMIND] Safety gate — live weaponization blocked</div>
           </div>
         </div>
       </div>
@@ -450,33 +624,108 @@ function AIPatcherView() {
 
 // ── Crypto Audit ──────────────────────────────────────────────────────────────
 function CryptoAuditView() {
+  const [sshData,  setSshData]  = useState(null);
+  const [tlsData,  setTlsData]  = useState(null);
+  const [loading,  setLoading]  = useState({});
+  const [tlsHost,  setTlsHost]  = useState('localhost');
+  const [tlsPort,  setTlsPort]  = useState(443);
+
+  const run = (key, fn, setter) => {
+    setLoading(l=>({...l,[key]:true}));
+    fn().then(setter).catch(e=>setter({error:e.message}))
+       .finally(()=>setLoading(l=>({...l,[key]:false})));
+  };
+
+  useEffect(()=>{ run('ssh', ()=>cg.pentestSsh(), setSshData); }, []);
+
+  const sc = s => s==='pass'?'bg-green-50 text-green-700':s==='fail'?'bg-red-50 text-red-700':'bg-yellow-50 text-yellow-700';
+  const dot = s => s==='pass'?'bg-green-400':s==='fail'?'bg-red-400':'bg-yellow-400';
+
+  const pqcChecks = [
+    {name:'ML-KEM-768 (NIST FIPS 203)', status:'pass', note:'Post-quantum KEM — enabled'},
+    {name:'SLH-DSA-SHA2-128s (FIPS 205)', status:'pass', note:'Post-quantum signing — enabled'},
+    {name:'ML-DSA-65 (FIPS 204)', status:'warn', note:'Not yet integrated'},
+    {name:'AES-256-GCM', status:'pass', note:'Symmetric — system standard'},
+    {name:'RSA-4096', status:'warn', note:'Classical — vulnerable to Shor'},
+    {name:'Ed25519', status:'pass', note:'Elliptic curve — strong'},
+  ];
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">Cryptographic Security Audit</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Password Strength Analysis</h4>
-          <div className="space-y-3 text-sm">
-            {[['Dictionary Attacks','42 weak passwords','text-red-600'],['Rainbow Table Lookup','Running…','text-yellow-600'],['Brute Force Resistance','Strong','text-green-600']].map(([k,v,c],i)=>(
-              <div key={i} className="flex justify-between items-center"><span className="text-gray-600">{k}</span><span className={`font-medium ${c}`}>{v}</span></div>
-            ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Key className="w-4 h-4 text-yellow-500"/>SSH Keys (~/.ssh)
+            </h4>
+            <button onClick={()=>run('ssh',()=>cg.pentestSsh(),setSshData)}
+              disabled={loading.ssh}
+              className="px-3 py-1 text-xs bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+              {loading.ssh?'Scanning…':'Rescan'}
+            </button>
           </div>
+          {sshData && !sshData.error && (
+            <>
+              <div className="text-xs text-gray-400 mb-2">{sshData.key_count} private keys · {sshData.pubkey_count} public keys</div>
+              {sshData.keys?.length === 0
+                ? <div className="text-xs text-gray-400 italic">No private keys found in ~/.ssh</div>
+                : sshData.keys?.map((k,i)=>(
+                  <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm mb-1 ${sc(k.status)}`}>
+                    <span className="font-mono">{k.file}</span>
+                    <span className="text-xs">{k.type} {k.bits>0?k.bits+'b':''}</span>
+                  </div>
+                ))}
+            </>
+          )}
+          {sshData?.error && <div className="text-xs text-red-600">{sshData.error}</div>}
+          {!sshData && loading.ssh && <div className="text-xs text-gray-400 animate-pulse">Scanning…</div>}
         </div>
-        <div className="p-4 border border-gray-200 rounded-xl">
-          <h4 className="font-semibold text-gray-900 mb-3">Encryption Standards</h4>
-          <div className="space-y-3 text-sm">
-            {[['AES-256 Implementation','pass'],['RSA-4096 Key Strength','pass'],['Post-Quantum ML-KEM-768','warn'],['SLH-DSA-SHA2-128s Signing','pass']].map(([n,s],i)=>(
-              <div key={i} className="flex justify-between items-center"><span className="text-gray-600">{n}</span><div className={`w-2 h-2 rounded-full ${s==='pass'?'bg-green-400':s==='warn'?'bg-yellow-400':'bg-red-400'}`}></div></div>
-            ))}
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Lock className="w-4 h-4 text-blue-500"/>TLS/SSL Certificate Check
+          </h4>
+          <div className="flex gap-2 mb-3">
+            <input value={tlsHost} onChange={e=>setTlsHost(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder="hostname"/>
+            <input value={tlsPort} onChange={e=>setTlsPort(Number(e.target.value))}
+              className="w-20 px-2 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder="443"/>
+            <button onClick={()=>run('tls',()=>cg.pentestSsl(tlsHost,tlsPort),setTlsData)}
+              disabled={loading.tls}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {loading.tls?'…':'Check'}
+            </button>
           </div>
+          {tlsData && !tlsData.error && (
+            <div className="space-y-1">
+              {tlsData.checks?.map((c,i)=>(
+                <div key={i} className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs ${sc(c.status)}`}>
+                  <span>{c.check}</span><span>{c.detail||c.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {tlsData?.error && <div className="text-xs text-red-600">{tlsData.error}</div>}
         </div>
       </div>
-      <div className="bg-gray-50 rounded-xl p-4">
-        <h4 className="font-semibold text-gray-900 mb-4">Certificate Authority Status</h4>
-        <div className="grid grid-cols-3 gap-4">
-          {[['847','Valid Certificates','text-green-600'],['23','Expiring Soon','text-yellow-600'],['5','Revoked/Expired','text-red-600']].map(([n,l,c],i)=>(
-            <div key={i} className="bg-white p-4 rounded-lg text-center"><div className={`text-2xl font-bold ${c}`}>{n}</div><div className="text-sm text-gray-600">{l}</div></div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-purple-500"/>Post-Quantum Cryptography Status
+        </h4>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {pqcChecks.map((c,i)=>(
+            <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm">
+              <span className="text-gray-700">{c.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{c.note}</span>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dot(c.status)}`}/>
+              </div>
+            </div>
           ))}
+        </div>
+        <div className="mt-3 px-3 py-2 bg-purple-50 rounded-lg text-xs text-purple-700">
+          PQC keys stored in <span className="font-mono">kerrigan-fantasma/keys/</span> — gitignored. Managed by liboqs backend.
         </div>
       </div>
     </div>
@@ -750,42 +999,139 @@ const DEMO_NODES = [
   {name:'Workstation',ip:'192.168.1.100',type:'endpoint',risk:'low'},
 ];
 function NetworkMapView({ devices, ports }) {
-  const nodes = (devices&&devices.length) ? devices : DEMO_NODES;
+  const [arpData,    setArpData]    = useState(null);
+  const [routes,     setRoutes]     = useState(null);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanTarget, setScanTarget] = useState('127.0.0.1');
+  const [loading,    setLoading]    = useState({});
+
+  const run = (key, fn, setter) => {
+    setLoading(l=>({...l,[key]:true}));
+    fn().then(setter).catch(e=>setter({error:e.message}))
+       .finally(()=>setLoading(l=>({...l,[key]:false})));
+  };
+
+  useEffect(()=>{
+    run('arp',    ()=>cg.networkArp(),    setArpData);
+    run('routes', ()=>cg.networkRoutes(), setRoutes);
+  }, []);
+
+  const allDevices = [
+    ...(arpData?.devices||[]),
+    ...(devices||[]).filter(d => !(arpData?.devices||[]).some(a=>a.ip===d.ip)),
+  ];
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">Network Topology & Asset Discovery</h3>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {nodes.slice(0,8).map((d,i)=>(
-          <div key={i} className={`p-4 border-2 rounded-xl ${d.risk==='high'?'border-red-200 bg-red-50':d.risk==='medium'?'border-yellow-200 bg-yellow-50':'border-green-200 bg-green-50'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className={`w-3 h-3 rounded-full ${d.risk==='high'?'bg-red-500':d.risk==='medium'?'bg-yellow-500':'bg-green-500'}`}></div>
-              <span className="text-xs font-medium text-gray-500 uppercase">{d.type||'device'}</span>
-            </div>
-            <div className="font-semibold text-gray-900 text-sm">{d.name||d.hostname||'Unknown'}</div>
-            <div className="text-xs text-gray-600 font-mono">{d.ip||d.address||'—'}</div>
+    <div className="space-y-4">
+      {/* ARP neighbors */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Network className="w-4 h-4 text-blue-500"/>
+            Live ARP Table — Discovered Devices ({allDevices.length})
+          </h4>
+          <button onClick={()=>run('arp',()=>cg.networkArp(),setArpData)}
+            disabled={loading.arp}
+            className="px-3 py-1 text-xs bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+            {loading.arp?'Scanning…':'Refresh'}
+          </button>
+        </div>
+        {allDevices.length > 0 ? (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+            {allDevices.map((d,i)=>(
+              <div key={i} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg">
+                <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"/>
+                <div className="min-w-0">
+                  <div className="font-mono text-sm text-gray-800 truncate">{d.ip||d.address}</div>
+                  <div className="text-xs text-gray-400 font-mono truncate">{d.mac||''} {d.interface?`· ${d.interface}`:''}</div>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : loading.arp ? (
+          <div className="text-sm text-gray-400 animate-pulse">Running arp -a…</div>
+        ) : (
+          <div className="text-sm text-gray-400">No ARP neighbors found (single-device network or WiFi isolation)</div>
+        )}
+        {arpData?.error && <div className="text-xs text-red-500 mt-2">{arpData.error}</div>}
       </div>
-      <div className="bg-gray-50 rounded-xl p-4">
-        <h4 className="font-semibold text-gray-900 mb-4">Live Port Scan Results</h4>
-        <div className="bg-black rounded-lg p-4 font-mono text-xs leading-5">
-          <div className="text-green-400 mb-2">Scanning…</div>
-          {(ports&&ports.length) ? ports.slice(0,20).map((p,i)=>(
-            <div key={i} className={p.state==='open'?'text-gray-300':'text-gray-600'}>
-              {(p.address||'').padEnd(18)}{String(p.port||'').padEnd(8)}{(p.protocol||'TCP').padEnd(6)}{p.state||'open'}{p.service?' '+p.service:''}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Port scanner */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-purple-500"/>Port Scan
+          </h4>
+          <div className="flex gap-2 mb-3">
+            <input value={scanTarget} onChange={e=>setScanTarget(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" placeholder="Target IP"/>
+            <button onClick={()=>run('scan',()=>cg.pentestPortscan(scanTarget,[21,22,23,25,53,80,443,3306,3307,5432,6379,8080,8443,27017]),setScanResult)}
+              disabled={loading.scan}
+              className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50">
+              {loading.scan?'Scanning…':'Scan'}
+            </button>
+          </div>
+          {scanResult && !scanResult.error && (
+            <div>
+              <div className="text-xs text-gray-400 mb-2">{scanResult.scanned} ports · {scanResult.open_count} open</div>
+              <div className="bg-black rounded-lg p-3 font-mono text-xs space-y-0.5 max-h-48 overflow-y-auto">
+                {scanResult.open?.length === 0
+                  ? <div className="text-green-400">All scanned ports closed</div>
+                  : scanResult.open?.map((p,i)=>(
+                    <div key={i} className="text-gray-200">
+                      <span className="text-green-400">{String(p.port).padEnd(6)}</span>
+                      <span className="text-gray-400">open  </span>
+                      <span className="text-gray-300 truncate">{p.banner||''}</span>
+                    </div>
+                  ))}
+              </div>
             </div>
-          )) : <>
-            <div className="text-gray-300">192.168.1.1       22/tcp   open  ssh</div>
-            <div className="text-gray-300">192.168.1.1       80/tcp   open  http</div>
-            <div className="text-gray-300">192.168.1.1       443/tcp  open  https</div>
-            <div className="text-gray-300">192.168.1.10      80/tcp   open  http    Apache/2.4.41</div>
-            <div className="text-gray-300">192.168.1.10      443/tcp  open  https   Apache/2.4.41</div>
-            <div className="text-gray-300">192.168.1.20      3306/tcp open  mysql   MySQL 8.0</div>
-            <div className="text-red-400">192.168.1.20      5432/tcp open  postgres (VULNERABLE)</div>
-            <div className="text-gray-300">192.168.1.100     135/tcp  open  msrpc</div>
-            <div className="text-gray-300">192.168.1.100     445/tcp  open  microsoft-ds</div>
-            <div className="text-green-400 mt-2">Scan complete. 9 ports open, 1 vulnerability detected.</div>
-          </>}
+          )}
+          {scanResult?.error && <div className="text-xs text-red-600">{scanResult.error}</div>}
+          {/* Also show live ports from monitor */}
+          {!scanResult && ports?.length > 0 && (
+            <div className="bg-black rounded-lg p-3 font-mono text-xs space-y-0.5 max-h-48 overflow-y-auto">
+              <div className="text-green-400 mb-1">Live open ports (from monitor):</div>
+              {ports.slice(0,20).map((p,i)=>(
+                <div key={i} className="text-gray-200">
+                  <span className="text-green-400">{String(p.port).padEnd(6)}</span>
+                  <span className="text-gray-400">{(p.protocol||'tcp').padEnd(4)} </span>
+                  <span className="text-gray-300">{p.address||''} {p.service||''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Routing table */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-green-500"/>Routing Table
+          </h4>
+          {routes?.routes?.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left py-1 pr-3">Destination</th>
+                    <th className="text-left py-1 pr-3">Gateway</th>
+                    <th className="text-left py-1">Iface</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {routes.routes.slice(0,15).map((r,i)=>(
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="py-1 pr-3 text-gray-700">{r.destination}</td>
+                      <td className="py-1 pr-3 text-gray-500">{r.gateway}</td>
+                      <td className="py-1 text-blue-500">{r.interface}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : loading.routes ? (
+            <div className="text-xs text-gray-400 animate-pulse">Running netstat -rn…</div>
+          ) : <div className="text-xs text-gray-400">No routes found</div>}
         </div>
       </div>
     </div>

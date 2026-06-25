@@ -403,6 +403,16 @@ ipcMain.handle('open-url', (_, url) => shell.openExternal(url));
 
 // ── Kerrigan DB IPC ───────────────────────────────────────────────────────────
 
+// ── Real security tool IPC ────────────────────────────────────────────────────
+ipcMain.handle('pentest-headers',  async (_, url) => { try { return await kerrigan.get(`/pentest/headers?url=${encodeURIComponent(url)}`); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('pentest-portscan', async (_, target, ports) => { try { return await kerrigan.post('/pentest/portscan', {target, ports}); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('pentest-ssl',      async (_, host, port) => { try { return await kerrigan.get(`/pentest/ssl?host=${host}&port=${port}`); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('pentest-ssh',      async () => { try { return await kerrigan.get('/pentest/ssh-audit'); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('network-arp',      async () => { try { return await kerrigan.get('/network/arp'); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('network-routes',   async () => { try { return await kerrigan.get('/network/routes'); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('scan-cve',         async (_, q) => { try { return await kerrigan.get(`/scan/cve?q=${encodeURIComponent(q)}`); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('patcher-status',   async () => { try { return await kerrigan.get('/patcher/status'); } catch(e) { return {error:e.message}; }});
+
 ipcMain.handle('honeypot-counts', async () => {
   try { return await kerrigan.get('/honeypot/counts'); }
   catch (e) { return { ssh: 0, web: 0, database: 0, total: 0, recent: [], error: e.message }; }

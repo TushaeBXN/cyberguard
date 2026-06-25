@@ -120,4 +120,4 @@ async function status() {
   }
 }
 
-module.exports = { start, stop, isReady, chat, status, get };
+module.exports = { start, stop, isReady, chat, status, get, post };
