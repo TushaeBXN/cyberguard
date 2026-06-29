@@ -12,8 +12,11 @@ Real attackers caught by the CyberGuard AI honeypot network. All incidents verif
 | CGI-20260629-002 | 05:00 | 35.216.201.9 | Switzerland (Google GCP) | Full Exploit Scanner | 4,249 from 797 sources |
 | CGI-20260629-003 | 04:49 | 94.156.152.234 | Romania (bulletproof hosting) | Suspected Mirai Botnet Node | 1,761 from 284 sources |
 | CGI-20260629-004 | 05:12 | 4.193.139.29 | Singapore (Microsoft Azure) | JBoss RCE Exploit Scanner | 174 from 151 sources |
+| CGI-20260629-005 | 05:26 | 221.212.228.238 | China (Harbin Tax Bureau) | SSH Brute Force — Go scanner | 942 from 372 sources |
 
-**Combined: 7,786 AbuseIPDB reports from 1,412 distinct sources worldwide — all active on the same day.**
+**Combined: 8,728 AbuseIPDB reports from 1,784 distinct sources worldwide — all active on the same day.**
+
+**Honeypot coverage: Web (17 hits), SSH (2 hits), Database (1 hit) — all 3 honeypot types triggered within 24 hours.**
 
 ### Payloads Captured
 
@@ -50,6 +53,12 @@ HEAD /invoker/JMXInvokerServlet HTTP/1.1
 HEAD /web-console/ServerInfo.jsp HTTP/1.1
 ```
 Purpose-built JBoss RCE scanner targeting CVE-2010-0738 and CVE-2012-0874 (unauthenticated remote code execution). Spoofs Firefox 38 user agent. Only 10 days old at time of capture.
+
+**005 — 221.212.228.238**
+```
+SSH-2.0-Go
+```
+First SSH honeypot hit. Custom Go-language SSH brute-force scanner from Harbin Tax Bureau network, China. Found non-standard port 2222 via full range scan. ThreatBook.io classifies as Scanner/Gateway. Credential stuffing with username root.
 
 ---
 

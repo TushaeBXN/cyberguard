@@ -58,7 +58,7 @@ The honeypot has been live since June 29, 2026. Real attackers caught so far:
 
 | Date | Attackers | Combined Reports |
 |---|---|---|
-| June 29, 2026 | 4 confirmed | 7,786 AbuseIPDB reports from 1,412 sources |
+| June 29, 2026 | 5 confirmed | 8,728 AbuseIPDB reports from 1,784 sources |
 
 **[View full threat log →](incidents/THREAT_LOG.md)**
 
