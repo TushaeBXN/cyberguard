@@ -25,7 +25,26 @@ A standalone Electron desktop app that combines real-time system monitoring, AI-
 
 ## Screenshots
 
-> Dashboard showing live threat intelligence, system status, and security checks running against a 2013 MacBook Pro running macOS Sequoia via OpenCore.
+**Dashboard** — live CPU, RAM, threat count, and security checks running against a 2013 MacBook Pro on macOS Sequoia via OpenCore Legacy Patcher.
+
+![Dashboard](screenshots/dashboard.png)
+
+**AI Assistant** — Kerrigan answering about the actual machine using live telemetry (CPU%, RAM, top processes, open ports, active threats).
+
+![AI Assistant](screenshots/ai-assistant.png)
+![AI Assistant Thinking](screenshots/ai-assistant-thinking.png)
+
+**AI Auto-Patcher** — 7-agent fuzzing system: 6,499 training examples, 2 crashes found, Overmind safety gate active.
+
+![AI Auto-Patcher](screenshots/ai-auto-patcher.png)
+
+**Vuln Scanner** — Live security checks (Firewall, FileVault, SIP, Gatekeeper) + NVD CVE database search + AI Threat Hunter.
+
+![Vuln Scanner](screenshots/vuln-scanner.png)
+
+**Crypto Audit** — Real SSH key scan from `~/.ssh/`, TLS/SSL checker, and Post-Quantum Cryptography status (ML-KEM-768, SLH-DSA via liboqs).
+
+![Crypto Audit](screenshots/crypto-audit.png)
 
 ---
 
