@@ -46,6 +46,10 @@ A standalone Electron desktop app that combines real-time system monitoring, AI-
 
 ![Crypto Audit](screenshots/crypto-audit.png)
 
+**Incident Report** — Auto-generated threat intelligence report for the first real attacker caught by the honeypot (176.65.148.253, Netherlands, 100% AbuseIPDB confidence).
+
+![Incident Report](screenshots/incident-report.png)
+
 ---
 
 ## Requirements
