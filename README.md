@@ -52,6 +52,20 @@ A standalone Electron desktop app that combines real-time system monitoring, AI-
 
 ---
 
+## Live Threat Log
+
+The honeypot has been live since June 29, 2026. Real attackers caught so far:
+
+| Date | Attackers | Combined Reports |
+|---|---|---|
+| June 29, 2026 | 4 confirmed | 7,786 AbuseIPDB reports from 1,412 sources |
+
+**[View full threat log →](incidents/THREAT_LOG.md)**
+
+Full incident reports (DOCX) with attacker profiles, captured payloads, CVE mappings, and global attack timelines are in the [`incidents/`](incidents/) directory.
+
+---
+
 ## Requirements
 
 - macOS 10.15+
