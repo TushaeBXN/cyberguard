@@ -23,6 +23,7 @@ let mainWindow;
 let statsInterval;
 let monitorInterval;
 let feedRefreshInterval;
+let honeypotInterval;
 let threatCount = 0;
 let cachedFeeds = [];
 
@@ -95,12 +96,41 @@ function startMonitoring() {
 
   // Refresh intelligence feeds every 30 min
   feedRefreshInterval = setInterval(refreshFeeds, 30 * 60 * 1000);
+
+  // Honeypot hit notifications — poll every 20s, alert on new hits
+  let lastHoneypotTotal = 0;
+  let lastHoneypotIds   = new Set();
+  honeypotInterval = setInterval(async () => {
+    try {
+      const data = await kerrigan.get('/honeypot/counts');
+      if (!data || data.error) return;
+      const recent = data.recent || [];
+      // Find hits we haven't seen before (by timestamp+ip combo)
+      for (const hit of recent) {
+        const id = `${hit.honeypot_type}|${hit.attacker_ip}|${hit.created_at}`;
+        if (!lastHoneypotIds.has(id)) {
+          lastHoneypotIds.add(id);
+          if (lastHoneypotTotal > 0) {
+            // Only notify after first poll so we don't spam on startup
+            mainWindow?.webContents.send('honeypot-hit', {
+              type:    hit.honeypot_type,
+              ip:      hit.attacker_ip,
+              payload: hit.payload || '',
+              time:    hit.created_at,
+            });
+          }
+        }
+      }
+      lastHoneypotTotal = data.total;
+    } catch (_) {}
+  }, 20_000);
 }
 
 function stopMonitoring() {
   clearInterval(statsInterval);
   clearInterval(monitorInterval);
   clearInterval(feedRefreshInterval);
+  clearInterval(honeypotInterval);
 }
 
 // ── Real threat monitors ──────────────────────────────────────────────────────

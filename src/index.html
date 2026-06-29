@@ -7,6 +7,7 @@
   <title>CyberGuard AI</title>
   <style>
     body { margin: 0; background: #f9fafb; }
+    @keyframes slideIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
   </style>
   <!-- Diagnostic: capture console errors + show fallback if React never mounts -->
   <script>
@@ -1373,6 +1374,42 @@ const MODULES = [
 ];
 
 // ── Root App ──────────────────────────────────────────────────────────────────
+// ── Honeypot Toast Notifications ──────────────────────────────────────────────
+function HoneypotToasts() {
+  const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    if (!cg.onHoneypotHit) return;
+    cg.onHoneypotHit(hit => {
+      const id = Date.now();
+      const icon = hit.type === 'ssh' ? '🔐' : hit.type === 'web' ? '🌐' : '🗄️';
+      const label = hit.type === 'ssh' ? 'SSH Honeypot' : hit.type === 'web' ? 'Web Honeypot' : 'DB Honeypot';
+      setToasts(t => [...t, { id, icon, label, ip: hit.ip, payload: hit.payload }]);
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 8000);
+    });
+    return () => cg.off && cg.off('honeypot-hit');
+  }, []);
+
+  if (!toasts.length) return null;
+
+  return (
+    <div style={{position:'fixed', bottom:'24px', right:'24px', zIndex:9999, display:'flex', flexDirection:'column', gap:'8px'}}>
+      {toasts.map(t => (
+        <div key={t.id} className="bg-gray-900 text-white rounded-2xl shadow-2xl px-5 py-4 flex items-start gap-3"
+          style={{minWidth:'300px', maxWidth:'380px', animation:'slideIn 0.3s ease'}}>
+          <span style={{fontSize:'24px'}}>{t.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm text-red-400">{t.label} Hit</div>
+            <div className="text-xs text-gray-300 font-mono mt-0.5">{t.ip}</div>
+            {t.payload && <div className="text-xs text-gray-400 mt-1 truncate">{t.payload.slice(0,60)}</div>}
+          </div>
+          <button onClick={()=>setToasts(ts=>ts.filter(x=>x.id!==t.id))} className="text-gray-500 hover:text-white text-lg leading-none">×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [active,    setActive]    = useState('dashboard');
   const [stats,     setStats]     = useState(null);
@@ -1403,6 +1440,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <HoneypotToasts/>
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">

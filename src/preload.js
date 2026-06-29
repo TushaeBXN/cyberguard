@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('cyberguard', {
   onPortsUpdate:       (cb) => ipcRenderer.on('ports-update',        (_, d) => cb(d)),
   onUpdateAvailable:   (cb) => ipcRenderer.on('update-available',    ()     => cb()),
   onUpdateDownloaded:  (cb) => ipcRenderer.on('update-downloaded',   ()     => cb()),
+  onHoneypotHit:       (cb) => ipcRenderer.on('honeypot-hit',        (_, d) => cb(d)),
 
   off: (channel) => ipcRenderer.removeAllListeners(channel),
 
