@@ -89,13 +89,30 @@ Or it defaults to `~/Desktop/kerrigan-fantasma` automatically.
 
 ## Startup
 
+Four terminals required for full operation:
+
 ```bash
-# Terminal 1 — Start Ollama (AI engine)
+# Terminal 1 — Ollama (AI engine)
 ollama serve
 
-# Terminal 2 — Start CyberGuard AI
-cd ~/cyberguard && npm start
+# Terminal 2 — Kerrigan FastAPI server
+cd ~/CyberGuardAI && python3 src/kerrigan_server.py
+
+# Terminal 3 — SSH tunnel to Azure VM (keeps honeypot DB connected)
+ssh -i ~/Desktop/cyberguard-honeypot_key.pem -R 3306:localhost:3306 -N azureuser@52.188.227.95
+
+# Terminal 4 — CyberGuard AI Electron app
+cd ~/CyberGuardAI && npm start
 ```
+
+**Azure VM honeypot** (separate SSH session — keeps internet-facing honeypots running):
+
+```bash
+ssh -i ~/Desktop/cyberguard-honeypot_key.pem azureuser@52.188.227.95
+python3 ~/honeypot.py
+```
+
+The Azure VM (`52.188.227.95`) runs honeypots exposed to the open internet on ports 2222 (SSH), 8080 (Web), and 3307 (fake MySQL). Hits tunnel back to `kerrigan_db` on the local machine via reverse SSH port forwarding, appear live in the IDS/IPS panel, and trigger toast notifications in the app.
 
 That's it. The app launches, starts all monitors, connects to Kerrigan, and begins real-time analysis automatically.
 
