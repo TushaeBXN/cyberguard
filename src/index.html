@@ -737,6 +737,26 @@ function CryptoAuditView() {
 function IDSIPSView({ threats }) {
   const [hp, setHp]         = useState({ ssh: 0, web: 0, database: 0, total: 0, recent: [] });
   const [hpLoading, setHpLoading] = useState(false);
+  const [ipLookup,  setIpLookup]  = useState({});  // ip -> result
+  const [ipLoading, setIpLoading] = useState({});  // ip -> bool
+
+  const lookupIp = async (ip) => {
+    if (ipLookup[ip] || ipLoading[ip]) return;
+    setIpLoading(l => ({...l, [ip]: true}));
+    try {
+      const r = await fetch(`https://ipapi.co/${ip}/json/`);
+      const d = await r.json();
+      setIpLookup(l => ({...l, [ip]: {
+        country: d.country_name || '?',
+        city:    d.city || '',
+        org:     d.org || '',
+        flag:    d.country_code ? `https://flagcdn.com/16x12/${d.country_code.toLowerCase()}.png` : null,
+      }}));
+    } catch(e) {
+      setIpLookup(l => ({...l, [ip]: { country: 'Lookup failed', city:'', org:'' }}));
+    }
+    setIpLoading(l => ({...l, [ip]: false}));
+  };
 
   const loadHoneypot = () => {
     setHpLoading(true);
@@ -806,14 +826,31 @@ function IDSIPSView({ threats }) {
               ? <div className="text-sm text-gray-400">No honeypot hits yet — listening on ports 2222, 8080, 3307</div>
               : hp.recent.map((e,i)=>(
                 <div key={i} className="text-sm bg-gray-50 rounded-lg p-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${e.honeypot_type==='ssh'?'bg-purple-100 text-purple-700':e.honeypot_type==='web'?'bg-blue-100 text-blue-700':'bg-orange-100 text-orange-700'}`}>
                       {e.honeypot_type?.toUpperCase()}
                     </span>
-                    <span className="font-mono text-red-600 text-xs">{e.attacker_ip}:{e.attacker_port}</span>
+                    <span className="font-mono text-red-600 text-xs flex-1">{e.attacker_ip}:{e.attacker_port}</span>
                     <span className="text-xs text-gray-400">{e.created_at ? new Date(e.created_at).toLocaleTimeString() : ''}</span>
+                    {e.attacker_ip !== '127.0.0.1' && (
+                      <button onClick={()=>lookupIp(e.attacker_ip)}
+                        disabled={ipLoading[e.attacker_ip]}
+                        className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex-shrink-0">
+                        {ipLoading[e.attacker_ip] ? '…' : 'Lookup'}
+                      </button>
+                    )}
                   </div>
                   {e.payload && <div className="text-xs text-gray-500 mt-1 truncate font-mono">{e.payload}</div>}
+                  {ipLookup[e.attacker_ip] && (
+                    <div className="mt-1.5 flex items-center gap-2 px-2 py-1.5 bg-white border border-gray-200 rounded-lg">
+                      {ipLookup[e.attacker_ip].flag && <img src={ipLookup[e.attacker_ip].flag} alt="" className="flex-shrink-0"/>}
+                      <div className="text-xs">
+                        <span className="font-medium text-gray-800">{ipLookup[e.attacker_ip].country}</span>
+                        {ipLookup[e.attacker_ip].city && <span className="text-gray-500"> · {ipLookup[e.attacker_ip].city}</span>}
+                        {ipLookup[e.attacker_ip].org && <div className="text-gray-400 truncate">{ipLookup[e.attacker_ip].org}</div>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             }
