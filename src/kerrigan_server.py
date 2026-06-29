@@ -32,6 +32,7 @@ os.chdir(KERRIGAN_DIR)
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import uvicorn
 
 # ── Lazy kerrigan imports (don't crash if deps missing) ──────────────────────
@@ -50,7 +51,18 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
-app       = FastAPI(title="CyberGuard AI Server")
+@asynccontextmanager
+async def lifespan(app):
+    _init()
+    _ensure_tables()
+    _ensure_conversations_table()
+    asyncio.create_task(_ssh_honeypot())
+    asyncio.create_task(_web_honeypot())
+    asyncio.create_task(_db_honeypot())
+    print("CyberGuard AI server ready", flush=True)
+    yield
+
+app       = FastAPI(title="CyberGuard AI Server", lifespan=lifespan)
 _start    = time.time()
 _router   = None
 _overmind = None
@@ -188,34 +200,23 @@ def _init():
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.on_event("startup")
-async def on_startup():
-    _init()
-    _ensure_tables()
-    _ensure_conversations_table()
-    asyncio.create_task(_ssh_honeypot())
-    asyncio.create_task(_web_honeypot())
-    asyncio.create_task(_db_honeypot())
-    print("CyberGuard AI server ready", flush=True)
-
-
 # ── Real Honeypots ─────────────────────────────────────────────────────────────
 
 SSH_BANNER = b"SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n"
 HTTP_TRAP  = b"HTTP/1.1 200 OK\r\nServer: Apache/2.4.41\r\nContent-Length: 0\r\n\r\n"
 MYSQL_GREETING = (
-    b"\x4a\x00\x00\x00"           # packet length + seq
-    b"\x0a"                        # protocol version 10
-    b"8.0.32\x00"                 # server version
-    b"\x01\x00\x00\x00"           # connection id
-    b"\x52\x7d\x1f\x29\x65\x43\x41\x48\x00"  # auth plugin data part 1
-    b"\xff\xf7"                    # capability flags low
-    b"\x21"                        # character set utf8
-    b"\x02\x00"                    # server status
-    b"\xff\x81"                    # capability flags high
-    b"\x15"                        # auth plugin data length
-    b"\x00" * 10                   # reserved
-    b"\x7e\x31\x3e\x1c\x58\x58\x36\x73\x6a\x49\x5a\x55\x00"  # auth plugin data part 2
+    b"\x4a\x00\x00\x00"
+    b"\x0a"
+    b"8.0.32\x00"
+    b"\x01\x00\x00\x00"
+    b"\x52\x7d\x1f\x29\x65\x43\x41\x48\x00"
+    b"\xff\xf7"
+    b"\x21"
+    b"\x02\x00"
+    b"\xff\x81"
+    b"\x15"
+    b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    b"\x7e\x31\x3e\x1c\x58\x58\x36\x73\x6a\x49\x5a\x55\x00"
     b"mysql_native_password\x00"
 )
 
