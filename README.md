@@ -99,6 +99,7 @@ ollama serve
 cd ~/CyberGuardAI && python3 src/kerrigan_server.py
 
 # Terminal 3 — SSH tunnel to Azure VM (keeps honeypot DB connected)
+# Note: Azure sshd requires GatewayPorts yes in /etc/ssh/sshd_config (already configured)
 ssh -i ~/Desktop/cyberguard-honeypot_key.pem -R 3306:localhost:3306 -N azureuser@52.188.227.95
 
 # Terminal 4 — CyberGuard AI Electron app
@@ -135,6 +136,7 @@ That's it. The app launches, starts all monitors, connects to Kerrigan, and begi
 
 ```
 cyberguard/
+├── incidents/               # Real attacker incident reports (DOCX)
 ├── src/
 │   ├── main.js              # Electron main process — IPC handlers, monitors, system stats
 │   ├── preload.js           # Secure IPC bridge (contextIsolation)
@@ -143,6 +145,8 @@ cyberguard/
 │   ├── kerrigan_server.py   # FastAPI backend — chat, hunt, DB endpoints
 │   ├── feeds.js             # Threat intelligence feed aggregator
 │   ├── store.js             # Encrypted local credential store
+│   ├── data/
+│   │   └── adaptive_defense.jsonl  # Attack rules written by AdaptiveDefense engine
 │   ├── monitors/
 │   │   ├── connections.js   # Live TCP/UDP connection monitor
 │   │   ├── ports.js         # Open port scanner
@@ -232,7 +236,7 @@ Every module shows live data — nothing is hardcoded or faked:
 
 - [ ] Switch default model to trained `kerrigan-fantasma` after RunPod training
 - [ ] DMG installer with auto-updater
-- [ ] IP reputation checking (AbuseIPDB) for honeypot attacker IPs
+- [ ] AbuseIPDB API integration for automated attacker reputation scoring
 - [ ] Compliance reporting (ISO 27001, NIST CSF, HIPAA, GDPR)
 - [ ] Windows and Linux builds
 

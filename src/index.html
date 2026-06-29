@@ -870,7 +870,7 @@ function IDSIPSView({ threats }) {
             'Lateral movement detection','Privilege escalation monitoring',
             'PQC key exposure detection','Distillation attack rate limiting',
             'SSH brute force detection (port 2222)','Web exploit probe detection (port 8080)',
-            'Fake MySQL handshake logging (port 3307)','Honeypot hit → Kerrigan memory pipeline'
+            'MySQL honeypot handshake capture (port 3307)','Honeypot hit → Kerrigan memory pipeline'
           ].map((rule,i)=>(
             <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
               <span className="text-sm text-gray-700">{rule}</span>
@@ -1030,12 +1030,6 @@ function ForensicsView() {
 }
 
 // ── Network Map ───────────────────────────────────────────────────────────────
-const DEMO_NODES = [
-  {name:'Firewall',ip:'192.168.1.1',type:'security',risk:'low'},
-  {name:'Web Server',ip:'192.168.1.10',type:'server',risk:'medium'},
-  {name:'Database',ip:'192.168.1.20',type:'database',risk:'high'},
-  {name:'Workstation',ip:'192.168.1.100',type:'endpoint',risk:'low'},
-];
 function NetworkMapView({ devices, ports }) {
   const [arpData,    setArpData]    = useState(null);
   const [routes,     setRoutes]     = useState(null);
