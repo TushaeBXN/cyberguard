@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('cyberguard', {
   // Intelligence feeds
   getFeeds:     () => ipcRenderer.invoke('get-feeds'),
   refreshFeeds: () => ipcRenderer.invoke('refresh-feeds'),
+  getThreatHistory: (limit) => ipcRenderer.invoke('get-threat-history', limit),
+  blocklistStats:   ()      => ipcRenderer.invoke('blocklist-stats'),
+  blocklistCheck:   (ip)    => ipcRenderer.invoke('blocklist-check', ip),
 
   // Credentials (encrypted, local only)
   credGetMasked:  ()         => ipcRenderer.invoke('cred-get-masked'),

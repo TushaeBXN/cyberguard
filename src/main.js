@@ -6,6 +6,7 @@ const path    = require('path');
 const si      = require('systeminformation');
 const store   = require('./store');
 const feeds   = require('./feeds');
+const blocklist = require('./blocklist');
 const kerrigan = require('./kerrigan-bridge');
 
 // Real monitors
@@ -148,9 +149,26 @@ async function runMonitors() {
   }
   mainWindow?.webContents.send('ports-update', portResult.ports);
 
+  // Check live connection destinations against the local C2/malware blocklist
+  const blocklistThreats = [];
+  for (const c of connResult.connections) {
+    const hit = blocklist.check(c.dstIp);
+    if (hit.listed) {
+      blocklistThreats.push({
+        type:     'Blocklisted Destination',
+        severity: hit.lists.includes('outbound') ? 'Critical' : 'High',
+        source:   c.dstIp,
+        detail:   `${c.process} (PID ${c.pid}) → ${c.dstIp}:${c.dstPort} — on ${hit.lists.join('+')} blocklist (known C2/malicious host)`,
+        process:  c.process,
+        port:     c.dstPort,
+      });
+    }
+  }
+
   // Emit deduplicated threat events
   const allThreats = [
     ...connResult.threats,
+    ...blocklistThreats,
     ...authResult.threats,
     ...portResult.threats,
   ];
@@ -166,7 +184,7 @@ async function runMonitors() {
     recentThreatKeys.set(key, now + THREAT_DEDUP_MS);
 
     threatCount++;
-    mainWindow?.webContents.send('threat-detected', {
+    const event = {
       id:        Date.now() + Math.random(),
       count:     threatCount,
       type:      t.type,
@@ -175,8 +193,30 @@ async function runMonitors() {
       detail:    t.detail || '',
       blocked:   false,
       timestamp: new Date().toISOString(),
-    });
+    };
+    mainWindow?.webContents.send('threat-detected', event);
+    logThreat(event);
   }
+}
+
+// ── Threat history persistence ────────────────────────────────────────────────
+// Append-only JSONL in userData so detections survive restarts and can feed
+// incident reports.
+
+const fsThreatLog = require('fs');
+let threatLogPath = null;
+
+function logThreat(event) {
+  if (!threatLogPath) return;
+  try { fsThreatLog.appendFileSync(threatLogPath, JSON.stringify(event) + '\n'); }
+  catch (_) {}
+}
+
+function readThreatHistory(limit = 200) {
+  try {
+    const lines = fsThreatLog.readFileSync(threatLogPath, 'utf8').trim().split('\n');
+    return lines.slice(-limit).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse();
+  } catch { return []; }
 }
 
 // ── Intelligence feeds ────────────────────────────────────────────────────────
@@ -355,6 +395,12 @@ ipcMain.handle('get-ports', () => {
 ipcMain.handle('get-feeds', () => cachedFeeds);
 ipcMain.handle('refresh-feeds', async () => { await refreshFeeds(); return cachedFeeds; });
 
+// ── IPC: Threat history & blocklist ───────────────────────────────────────────
+
+ipcMain.handle('get-threat-history', (_, limit) => readThreatHistory(limit));
+ipcMain.handle('blocklist-stats', () => blocklist.stats());
+ipcMain.handle('blocklist-check', (_, ip) => blocklist.check(ip));
+
 // ── IPC: Credentials ─────────────────────────────────────────────────────────
 
 ipcMain.handle('cred-get-masked', () => store.getMasked());
@@ -395,10 +441,27 @@ ipcMain.handle('cred-test', async (_, service) => {
 // ── IPC: Scanners ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('scan-ip', async (_, ip) => {
-  return ipScanner.checkIP(ip, {
+  const result = await ipScanner.checkIP(ip, {
     abuseipdb:  store.get('abuseipdb'),
     virustotal: store.get('virustotal'),
   });
+
+  // Local blocklist (bitwire-it/ipblocklist) — no API key needed
+  const hit = blocklist.check(ip);
+  if (hit.listed) {
+    result.results.push({
+      source:  'Local Blocklist',
+      ip,
+      lists:   hit.lists,
+      verdict: 'malicious',
+    });
+    result.verdict = 'malicious';
+    result.summary = `${ip} is on the ${hit.lists.join(' & ')} blocklist (known malicious). ${result.summary}`;
+  } else if (result.verdict === 'unknown') {
+    result.verdict = 'clean';
+    result.summary = `${ip} is not on the local blocklist. ${result.summary}`;
+  }
+  return result;
 });
 
 ipcMain.handle('scan-url', async (_, url) => {
@@ -517,6 +580,8 @@ function fetchJSON(url, headers) {
 
 app.whenReady().then(() => {
   store.init(app.getPath('userData'));
+  blocklist.init(app.getPath('userData'));
+  threatLogPath = path.join(app.getPath('userData'), 'threat-history.jsonl');
   kerrigan.start();
   createWindow();
 
