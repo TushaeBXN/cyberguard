@@ -1182,11 +1182,21 @@ function AIAssistantView({ stats, threats, secChecks, ports }) {
   const [sessions, setSessions] = useState([]);
   const [memTotal, setMemTotal] = useState(0);
   const [dbLoading, setDbLoading] = useState(false);
+  const [honeypot, setHoneypot] = useState(null);
+  const [firewall, setFirewall] = useState(null);
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
   useEffect(() => {
     if (cg.kerriganStatus) cg.kerriganStatus().then(s=>setAiStatus(s)).catch(()=>{});
+    // Pull live honeypot + firewall state for system context
+    const refreshLive = () => {
+      if (cg.honeypotCounts) cg.honeypotCounts().then(d=>setHoneypot(d)).catch(()=>{});
+      if (cg.firewallBlocked) cg.firewallBlocked().then(d=>setFirewall(d)).catch(()=>{});
+    };
+    refreshLive();
+    const t = setInterval(refreshLive, 30000);
+    return () => clearInterval(t);
   }, []);
 
   const loadDb = () => {
@@ -1228,6 +1238,23 @@ function AIAssistantView({ stats, threats, secChecks, ports }) {
     if (ports && ports.length) {
       const open = ports.filter(p=>p.state==='LISTEN'||p.state==='listen');
       lines.push(`Open listening ports (${open.length}): ${open.slice(0,8).map(p=>`${p.port}/${p.process||'?'}`).join(', ')}`);
+    }
+    // Honeypot live counts + recent attacker IPs
+    if (honeypot) {
+      lines.push(`Honeypot hits — SSH(2222): ${honeypot.ssh||0} | Web(8080): ${honeypot.web||0} | DB(3307): ${honeypot.database||0} | Total: ${honeypot.total||0}`);
+      if (honeypot.recent && honeypot.recent.length) {
+        lines.push('Recent honeypot events:');
+        honeypot.recent.slice(0,5).forEach(e =>
+          lines.push(`  - [${e.honeypot_type?.toUpperCase()}] ${e.attacker_ip}:${e.attacker_port} | payload: ${(e.payload||'').slice(0,60)} | at: ${e.created_at}`)
+        );
+      }
+    }
+    // Firewall block table
+    if (firewall) {
+      lines.push(`pf firewall: ${firewall.pf_active ? 'ACTIVE' : 'INACTIVE'} | ${firewall.blocked_count||0} IPs blocked`);
+      if (firewall.blocked_ips && firewall.blocked_ips.length) {
+        lines.push(`Blocked IPs: ${firewall.blocked_ips.join(', ')}`);
+      }
     }
     return lines.join('\n');
   };
