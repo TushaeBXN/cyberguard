@@ -1449,6 +1449,7 @@ function App() {
   const [ports,     setPorts]     = useState([]);
   const [devices,   setDevices]   = useState([]);
   const [secChecks, setSecChecks] = useState([]);
+  const [sysStatus, setSysStatus] = useState({ label: 'Connecting…', color: 'bg-gray-400', text: 'text-gray-500', ai: null, pf: null });
 
   useEffect(() => {
     Promise.allSettled([
@@ -1467,13 +1468,58 @@ function App() {
     return () => ['stats-update','threat-detected','connections-update','ports-update'].forEach(ch => cg.off && cg.off(ch));
   }, []);
 
+  // Poll system status every 10s — uses IPC bridge in Electron, direct fetch as fallback
+  useEffect(() => {
+    const check = async () => {
+      let s = null, fw = null;
+      try {
+        // Electron path: preload bridge
+        if (cg.kerriganStatus)      s  = await cg.kerriganStatus();
+        if (cg.firewallBlocked)     fw = await cg.firewallBlocked();
+        // Browser/dev fallback: direct HTTP (requires CORS on backend)
+        if (!s)  s  = await fetch('http://127.0.0.1:7432/status').then(r => r.json()).catch(() => null);
+        if (!fw) fw = await fetch('http://127.0.0.1:7432/firewall/blocked').then(r => r.json()).catch(() => null);
+      } catch(_) {}
+
+      const aiOk  = s?.ai_ok      ?? false;
+      const pfOk  = fw?.pf_active ?? false;
+      const criticalThreats = threats.filter(t => t.severity === 'critical').length;
+      const failedChecks    = secChecks.filter(c => c.status === 'fail').length;
+
+      let label, color, text;
+      if (criticalThreats > 0) {
+        label = `${criticalThreats} Critical Threat${criticalThreats > 1 ? 's' : ''}`;
+        color = 'bg-red-500'; text = 'text-red-700';
+      } else if (!s) {
+        label = 'Backend Offline';
+        color = 'bg-red-500'; text = 'text-red-700';
+      } else if (!aiOk) {
+        label = 'AI Offline';
+        color = 'bg-red-400'; text = 'text-red-600';
+      } else if (!pfOk) {
+        label = 'Firewall Inactive';
+        color = 'bg-yellow-400'; text = 'text-yellow-700';
+      } else if (failedChecks > 0) {
+        label = `${failedChecks} Check${failedChecks > 1 ? 's' : ''} Failing`;
+        color = 'bg-yellow-400'; text = 'text-yellow-700';
+      } else {
+        label = 'All Systems Operational';
+        color = 'bg-green-400'; text = 'text-green-700';
+      }
+      setSysStatus({ label, color, text, ai: aiOk, pf: pfOk });
+    };
+    check();
+    const t = setInterval(check, 10000);
+    return () => clearInterval(t);
+  }, [threats, secChecks]);
+
   const cpu = stats ? Math.round(stats.cpu) : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <HoneypotToasts/>
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
+      {/* Header — electron-drag makes the whole bar a window drag handle */}
+      <div className="bg-white shadow-sm border-b border-gray-200 electron-drag">
         <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
             <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-purple-600 rounded-2xl flex items-center justify-center mr-4">
@@ -1484,10 +1530,11 @@ function App() {
               <p className="text-sm text-gray-600">Advanced Security Operations Console</p>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center text-sm text-gray-600">
-              <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-              All Systems Operational
+          <div className="flex items-center space-x-4 electron-no-drag">
+            <div className={`flex items-center text-sm font-medium px-3 py-1.5 rounded-full bg-opacity-10 ${sysStatus.text}`}
+                 style={{background: sysStatus.color === 'bg-green-400' ? '#f0fdf4' : sysStatus.color === 'bg-yellow-400' ? '#fefce8' : '#fef2f2'}}>
+              <div className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 animate-pulse ${sysStatus.color}`}></div>
+              {sysStatus.label}
             </div>
             <button onClick={()=>setActive('ids-ips')} className="p-2 hover:bg-gray-100 rounded-full">
               <SettingsIcon className="w-5 h-5 text-gray-600"/>

@@ -4,6 +4,12 @@
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
+/* ── Electron window drag ── */
+/* The header bar is the drag handle for moving the window */
+.electron-drag    { -webkit-app-region: drag; user-select: none; }
+/* Buttons/inputs inside the drag region must opt out so they stay clickable */
+.electron-no-drag { -webkit-app-region: no-drag; }
+
 /* ── Layout ── */
 .flex { display: flex; }
 .flex-1 { flex: 1 1 0%; }

@@ -63,5 +63,6 @@ contextBridge.exposeInMainWorld('cyberguard', {
   // Kerrigan AI
   kerriganChat:   (msg, history, ctx) => ipcRenderer.invoke('kerrigan-chat', msg, history, ctx),
   kerriganStatus: ()             => ipcRenderer.invoke('kerrigan-status'),
-  kerriganHunt:   (path)        => ipcRenderer.invoke('kerrigan-hunt', path),
+  kerriganHunt:   (path)         => ipcRenderer.invoke('kerrigan-hunt', path),
+  firewallBlocked: ()            => ipcRenderer.invoke('firewall-blocked'),
 });

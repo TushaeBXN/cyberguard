@@ -1,13 +1,40 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, shell, dialog, screen } = require('electron');
 const { execSync } = require('child_process');
 const path    = require('path');
+const fs      = require('fs');
 const si      = require('systeminformation');
 const store   = require('./store');
 const feeds   = require('./feeds');
 const blocklist = require('./blocklist');
 const kerrigan = require('./kerrigan-bridge');
+
+// ── Window state persistence ──────────────────────────────────────────────────
+function windowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const raw = fs.readFileSync(windowStatePath(), 'utf8');
+    const s   = JSON.parse(raw);
+    // Verify the saved display still exists (handles unplugging the second screen)
+    const displays = screen.getAllDisplays();
+    const onScreen = displays.some(d =>
+      s.x >= d.bounds.x && s.x < d.bounds.x + d.bounds.width &&
+      s.y >= d.bounds.y && s.y < d.bounds.y + d.bounds.height
+    );
+    return onScreen ? s : null;
+  } catch { return null; }
+}
+
+function saveWindowState(win) {
+  if (win.isMaximized() || win.isMinimized()) return;
+  try {
+    fs.writeFileSync(windowStatePath(), JSON.stringify(win.getBounds()));
+  } catch { /* non-fatal */ }
+}
 
 // Real monitors
 const connMonitor = require('./monitors/connections');
@@ -35,9 +62,12 @@ const THREAT_DEDUP_MS  = 5 * 60 * 1000; // 5 minutes
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
+  const saved = loadWindowState();
   mainWindow = new BrowserWindow({
-    width:    1200,
-    height:   780,
+    width:    saved?.width  ?? 1200,
+    height:   saved?.height ?? 780,
+    x:        saved?.x,
+    y:        saved?.y,
     minWidth: 1000,
     minHeight: 680,
     titleBarStyle: 'hiddenInset',
@@ -52,6 +82,11 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // Save position/size whenever the user moves or resizes the window
+  const persistState = () => saveWindowState(mainWindow);
+  mainWindow.on('moved',   persistState);
+  mainWindow.on('resized', persistState);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -504,7 +539,8 @@ ipcMain.handle('pentest-ssh',      async () => { try { return await kerrigan.get
 ipcMain.handle('network-arp',      async () => { try { return await kerrigan.get('/network/arp'); } catch(e) { return {error:e.message}; }});
 ipcMain.handle('network-routes',   async () => { try { return await kerrigan.get('/network/routes'); } catch(e) { return {error:e.message}; }});
 ipcMain.handle('scan-cve',         async (_, q) => { try { return await kerrigan.get(`/scan/cve?q=${encodeURIComponent(q)}`); } catch(e) { return {error:e.message}; }});
-ipcMain.handle('patcher-status',   async () => { try { return await kerrigan.get('/patcher/status'); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('patcher-status',    async () => { try { return await kerrigan.get('/patcher/status'); } catch(e) { return {error:e.message}; }});
+ipcMain.handle('firewall-blocked',  async () => { try { return await kerrigan.get('/firewall/blocked'); } catch(e) { return {error:e.message}; }});
 
 ipcMain.handle('honeypot-counts', async () => {
   try { return await kerrigan.get('/honeypot/counts'); }

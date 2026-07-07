@@ -15,28 +15,77 @@ const fs         = require('fs');
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const PORT         = 7432;
+const HOME         = require('os').homedir();
 const KERRIGAN_DIR = process.env.KERRIGAN_PATH ||
-                     path.join(require('os').homedir(), 'Desktop', 'kerrigan-fantasma');
+                     path.join(HOME, 'kerrigan-fantasma');
+const ANTHOS_DIR   = process.env.ANTHOS_PATH   ||
+                     path.join(HOME, 'Desktop', 'anthos-repo');
 const SERVER_SCRIPT = path.join(__dirname, 'kerrigan_server.py');
 
 let serverProcess = null;
 let _ready        = false;
 
+// ── Ollama startup ────────────────────────────────────────────────────────────
+
+const OLLAMA_MODEL = process.env.KERRIGAN_MODEL || 'kerrigan-fantasma:latest';
+
+function ollamaRunning() {
+  return new Promise((resolve) => {
+    http.get({ hostname: '127.0.0.1', port: 11434, path: '/api/tags' }, (res) => {
+      resolve(res.statusCode === 200);
+    }).on('error', () => resolve(false));
+  });
+}
+
+async function ensureOllama() {
+  const running = await ollamaRunning();
+  if (!running) {
+    console.log('[Ollama] not running — starting ollama serve…');
+    spawn('ollama', ['serve'], { stdio: 'ignore', detached: true }).unref();
+    // Wait up to 8s for Ollama to come up
+    for (let i = 0; i < 16; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      if (await ollamaRunning()) { console.log('[Ollama] ready'); break; }
+    }
+  }
+  // Warm the model with a no-op so first real request isn't slow
+  console.log(`[Ollama] warming model ${OLLAMA_MODEL}…`);
+  const { execSync } = require('child_process');
+  try {
+    execSync(`ollama run ${OLLAMA_MODEL} ""`, { timeout: 30000, stdio: 'ignore' });
+    console.log('[Ollama] model warm');
+  } catch (_) {
+    // Non-fatal — model will load on first chat request instead
+    console.warn('[Ollama] warm-up skipped (model will load on first request)');
+  }
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-function start() {
+async function start() {
   if (serverProcess) return;
   if (!fs.existsSync(KERRIGAN_DIR)) {
     console.warn('[Kerrigan] kerrigan-fantasma not found at', KERRIGAN_DIR);
     return;
   }
 
+  await ensureOllama();
+
   // Kill any stale process holding our port
   try { require('child_process').execSync(`lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true`); } catch (_) {}
 
+  const existingPythonPath = process.env.PYTHONPATH || '';
+  const pythonPath = [KERRIGAN_DIR, ANTHOS_DIR, path.join(__dirname), existingPythonPath]
+    .filter(Boolean).join(':');
+
   serverProcess = spawn('python3', [SERVER_SCRIPT], {
     cwd:  KERRIGAN_DIR,
-    env:  { ...process.env, KERRIGAN_PATH: KERRIGAN_DIR },
+    env:  {
+      ...process.env,
+      KERRIGAN_PATH:  KERRIGAN_DIR,
+      KERRIGAN_MODEL: OLLAMA_MODEL,
+      PYTHONPATH:     pythonPath,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

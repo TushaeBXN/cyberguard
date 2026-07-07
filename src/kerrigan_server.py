@@ -11,6 +11,7 @@ Endpoints:
 
 import sys
 import os
+import re
 import time
 import json
 import asyncio
@@ -32,12 +33,13 @@ os.chdir(KERRIGAN_DIR)
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
 # ── Lazy kerrigan imports (don't crash if deps missing) ──────────────────────
 try:
-    from router.abathur import AbathurRouter
+    from router.abathur import Abathur
     from verifier.overmind import Overmind
     from memory.creep import Creep
     KERRIGAN_AVAILABLE = True
@@ -63,11 +65,12 @@ async def lifespan(app):
     yield
 
 app       = FastAPI(title="CyberGuard AI Server", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 _start    = time.time()
 _router   = None
 _overmind = None
 _memory   = None
-_model    = "deepseek-coder:6.7b"
+_model    = os.environ.get("KERRIGAN_MODEL", "kerrigan-fantasma:latest")
 
 # ── MySQL direct connection ────────────────────────────────────────────────────
 import hashlib
@@ -107,6 +110,36 @@ def _ensure_tables():
     finally:
         conn.close()
 
+_PF_TABLE      = "cyberguard_block"
+_PF_BLOCKLIST  = "/etc/cyberguard_blocklist"
+_IP_RE         = re.compile(r"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$")
+
+def _block_ip(ip: str):
+    """Add attacker IP to the live pf table and persist it across reboots.
+
+    Requires the one-time setup in setup_pf.sh (adds pf table + sudoers rule).
+    Fails silently if pf is not configured — rest of honeypot logging still runs.
+    """
+    if not _IP_RE.match(ip):
+        return
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["sudo", "/sbin/pfctl", "-t", _PF_TABLE, "-T", "add", ip],
+            capture_output=True, timeout=5
+        )
+        # Persist so the block survives a reboot
+        with open(_PF_BLOCKLIST, "a") as f:
+            f.write(ip + "\n")
+        if result.returncode == 0:
+            print(f"[Firewall] Blocked {ip}", flush=True)
+        else:
+            # pf not set up yet — log quietly, don't crash
+            print(f"[Firewall] pf not configured (run setup_pf.sh): {result.stderr.decode()[:80]}", flush=True)
+    except Exception as e:
+        print(f"[Firewall] Block failed for {ip}: {e}")
+
+
 def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
     conn = _get_db()
     if not conn: return
@@ -127,6 +160,9 @@ def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
         print(f"[DB] honeypot log error: {e}")
     finally:
         conn.close()
+
+    # Block attacker immediately — runs after DB so a DB failure doesn't skip it
+    _block_ip(attacker_ip)
 
 def _ensure_conversations_table():
     conn = _get_db()
@@ -196,6 +232,10 @@ def _init():
         _memory = Creep()
     except Exception as e:
         print(f"[Server] Creep init error: {e}")
+    try:
+        _router = Abathur()
+    except Exception as e:
+        print(f"[Server] Abathur init error: {e}")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -298,22 +338,67 @@ async def chat(request: Request):
     history     = body.get("history", [])
     system_ctx  = body.get("system_context", "")
 
-    # Safety gate first
+    # Safety gate first — screen the incoming request.
+    # Overmind.verify() returns a Verdict with .passed / .reason.
     if _overmind:
-        verdict = _overmind.verify(message)
-        if getattr(verdict, "blocked", False) or (isinstance(verdict, dict) and verdict.get("blocked")):
-            reason = getattr(verdict, "reason", verdict.get("reason", "blocked"))
-            return JSONResponse({"reply": f"[Blocked by Overmind: {reason}]", "blocked": True, "model": "overmind"})
+        verdict = _overmind.verify(message, query=message)
+        if not verdict.passed:
+            return JSONResponse({"reply": f"[Blocked by Overmind: {verdict.reason}]", "blocked": True, "model": "overmind"})
 
-    # Retrieve relevant memory
+    # Retrieve relevant memory (Creep exposes build_context / recall).
     mem_context = ""
     if _memory:
         try:
-            hits = _memory.query(message, n=3)
-            if hits:
-                mem_context = "\nRelevant prior findings:\n" + "\n".join(f"- {h}" for h in hits)
+            mem_context = _memory.build_context(message)
         except Exception:
             pass
+
+    # Gather live system state directly from the OS
+    import subprocess, psutil
+    live_lines = []
+    try:
+        # CPU / RAM
+        cpu_pct = psutil.cpu_percent(interval=0.2)
+        mem = psutil.virtual_memory()
+        live_lines.append(f"CPU: {cpu_pct}% | RAM: {mem.used//1024//1024}MB / {mem.total//1024//1024}MB ({mem.percent}%)")
+        # Top processes by CPU
+        procs = sorted(psutil.process_iter(['pid','name','cpu_percent','memory_percent']),
+                       key=lambda p: p.info['cpu_percent'] or 0, reverse=True)[:8]
+        live_lines.append("Top processes: " + ", ".join(f"{p.info['name']}({p.info['pid']})" for p in procs))
+        # Active network connections
+        conns = psutil.net_connections(kind='inet')
+        established = [c for c in conns if c.status == 'ESTABLISHED']
+        listening   = [c for c in conns if c.status == 'LISTEN']
+        live_lines.append(f"Network: {len(established)} established, {len(listening)} listening ports")
+        # Unique remote IPs
+        remote_ips = list({c.raddr.ip for c in established if c.raddr and c.raddr.ip})[:15]
+        if remote_ips:
+            live_lines.append("Active remote IPs: " + ", ".join(remote_ips))
+        # Listening ports
+        listen_ports = sorted({c.laddr.port for c in listening if c.laddr})[:20]
+        if listen_ports:
+            live_lines.append("Listening ports: " + ", ".join(str(p) for p in listen_ports))
+        # Honeypot counts from DB
+        conn_db = _get_db()
+        if conn_db:
+            try:
+                cur = conn_db.cursor(dictionary=True)
+                cur.execute("SELECT honeypot_type, COUNT(*) as n FROM honeypot_events GROUP BY honeypot_type")
+                hp_counts = {r['honeypot_type']: r['n'] for r in cur.fetchall()}
+                cur.execute("SELECT honeypot_type, attacker_ip, payload, created_at FROM honeypot_events ORDER BY created_at DESC LIMIT 5")
+                recent_hits = cur.fetchall()
+                conn_db.close()
+                if hp_counts:
+                    live_lines.append("Honeypot hits: " + ", ".join(f"{k}={v}" for k,v in hp_counts.items()))
+                if recent_hits:
+                    live_lines.append("Recent honeypot hits:")
+                    for h in recent_hits:
+                        live_lines.append(f"  [{h['honeypot_type']}] {h['attacker_ip']} — {str(h['payload'])[:60]} @ {h['created_at']}")
+            except: pass
+    except Exception as e:
+        live_lines.append(f"[telemetry error: {e}]")
+
+    server_ctx = "\n".join(live_lines)
 
     # Build prompt
     system = (
@@ -323,8 +408,10 @@ async def chat(request: Request):
         "Answer specifically about THIS machine using the data provided. "
         "Be direct, technical, and concise. No disclaimers. No generic advice unless asked.\n"
     )
+    system += "\n=== LIVE SYSTEM STATE (server-gathered) ===\n" + server_ctx + "\n"
     if system_ctx:
-        system += "\n=== LIVE SYSTEM STATE ===\n" + system_ctx + "\n=== END SYSTEM STATE ===\n"
+        system += "\n=== ADDITIONAL CONTEXT (from UI) ===\n" + system_ctx + "\n"
+    system += "=== END SYSTEM STATE ===\n"
     if mem_context:
         system += "\n=== PRIOR FINDINGS ===\n" + mem_context + "\n========================\n"
 
@@ -339,18 +426,35 @@ async def chat(request: Request):
     # Save user message to MySQL
     _save_to_db(conv_id, "user", message, model=_model)
 
+    # Route to the best available expert model for this query (Abathur
+    # resolves to an installed model, falling back to _model on any error).
+    chosen_model = _model
+    if _router is not None:
+        try:
+            chosen_model = _router.route(message).model
+        except Exception:
+            chosen_model = _model
+
     # Call Ollama
     if OLLAMA_AVAILABLE:
         try:
-            resp = _ollama.chat(model=_model, messages=messages)
+            resp = _ollama.chat(model=chosen_model, messages=messages)
             reply = resp["message"]["content"]
         except Exception as e:
-            reply = f"[Ollama error: {e}. Is Ollama running with {_model}?]"
+            reply = f"[Ollama error: {e}. Is Ollama running with {chosen_model}?]"
     else:
         reply = "[Ollama not installed. pip install ollama and pull a model.]"
 
+    # Screen the model's output before returning it — this is Overmind's
+    # actual purpose (gate() blocks or appends warnings to the response).
+    if _overmind:
+        try:
+            reply, _ = _overmind.gate(reply, query=message)
+        except Exception:
+            pass
+
     # Save assistant reply to MySQL
-    _save_to_db(conv_id, "assistant", reply, model=_model)
+    _save_to_db(conv_id, "assistant", reply, model=chosen_model)
 
     # Save as memory entry so it appears in Memories tab
     _save_memory_to_db(
@@ -359,14 +463,14 @@ async def chat(request: Request):
         tags="chat,cyberguard"
     )
 
-    # Store to ChromaDB if available
+    # Store to ChromaDB if available (Creep.tag_response absorbs + auto-tags).
     if _memory:
         try:
-            _memory.store(f"Q: {message}\nA: {reply[:300]}", metadata={"source": "cyberguard_chat"})
+            _memory.tag_response(query=message, response=reply, expert="cyberguard_chat")
         except Exception:
             pass
 
-    return JSONResponse({"reply": reply, "blocked": False, "model": _model})
+    return JSONResponse({"reply": reply, "blocked": False, "model": chosen_model})
 
 
 @app.get("/status")
@@ -716,6 +820,44 @@ async def db_sessions(limit: int = 10):
         return {"sessions": rows}
     except Exception as e:
         return {"sessions": [], "error": str(e)}
+
+
+@app.get("/firewall/blocked")
+async def firewall_blocked():
+    """Return the IPs currently blocked in the live pf table."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["sudo", "/sbin/pfctl", "-t", _PF_TABLE, "-T", "show"],
+            capture_output=True, text=True, timeout=5
+        )
+        ips = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+        return {"blocked_count": len(ips), "blocked_ips": ips, "pf_active": r.returncode == 0}
+    except Exception as e:
+        return {"blocked_count": 0, "blocked_ips": [], "pf_active": False, "error": str(e)}
+
+
+@app.delete("/firewall/blocked/{ip}")
+async def firewall_unblock(ip: str):
+    """Remove an IP from the live pf block table (manual override)."""
+    import subprocess
+    if not _IP_RE.match(ip):
+        return JSONResponse({"error": "invalid IP"}, status_code=400)
+    try:
+        r = subprocess.run(
+            ["sudo", "/sbin/pfctl", "-t", _PF_TABLE, "-T", "delete", ip],
+            capture_output=True, text=True, timeout=5
+        )
+        # Also remove from the persist file
+        try:
+            lines = open(_PF_BLOCKLIST).read().splitlines()
+            with open(_PF_BLOCKLIST, "w") as f:
+                f.write("\n".join(l for l in lines if l.strip() != ip) + "\n")
+        except FileNotFoundError:
+            pass
+        return {"unblocked": ip, "success": r.returncode == 0}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":
