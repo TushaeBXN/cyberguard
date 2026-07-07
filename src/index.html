@@ -538,32 +538,74 @@ function AIPatcherView() {
 
   useEffect(()=>{
     const load = () => {
-      setLoading(true);
-      (cg.patcherStatus ? cg.patcherStatus() : Promise.resolve(null))
-        .then(s=>setStatus(s)).catch(()=>setStatus(null))
-        .finally(()=>setLoading(false));
+      const fetcher = cg.patcherStatus
+        ? cg.patcherStatus()
+        : fetch('http://127.0.0.1:7432/patcher/status').then(r=>r.json()).catch(()=>null);
+      fetcher.then(s=>setStatus(s)).catch(()=>setStatus(null)).finally(()=>setLoading(false));
     };
     load();
-    const t = setInterval(load, 30000);
+    const t = setInterval(load, 8000);  // 8s so phase changes are visible
     return ()=>clearInterval(t);
   }, []);
 
-  const agents = [
-    ['Orchestrator','coordinating','Managing fuzzing campaigns'],
-    ['Seed Generator','running','Creating fuzzing inputs from kerrigan_db.sessions'],
-    ['Fuzzer Engine','running','AggressiveMutationFuzzer active'],
-    ['Program Model','analyzing','Building Kerrigan-Fantasma code context'],
-    ['Vuln Classifier', status?.db_crashes>0?'running':'idle', status?.db_crashes>0?`${status.db_crashes} crashes in DB`:'Awaiting findings'],
-    ['Patch Generator','running','Generating candidate fixes'],
-    ['Regression Tester','validating','Testing patch safety via kerrigan_db.sessions'],
-  ];
+  const phase = status?.fuzzer_phase ?? 'idle';
+  const fzRunning = status?.fuzzer_running ?? false;
+
+  // Map real fuzzer phase to each agent's displayed status
+  const phaseAgent = {
+    generating:  'Orchestrator',
+    compiling:   'Fuzzer Engine',
+    fuzzing:     'Fuzzer Engine',
+    triaging:    'Vuln Classifier',
+    analyzing:   'Program Model',
+    evolving:    'Patch Generator',
+  };
+  const activeAgent = phaseAgent[phase] ?? '';
+
+  const agentStatus = (name) => {
+    if (!fzRunning) return 'idle';
+    if (name === activeAgent) return 'running';
+    // Orchestrator always coordinating while fuzzer runs
+    if (name === 'Orchestrator' && fzRunning) return 'coordinating';
+    // Regression Tester active when we have crashes to validate
+    if (name === 'Regression Tester' && (status?.fuzzer_crashes??0)>0) return 'validating';
+    // Vuln Classifier active when DB has crashes
+    if (name === 'Vuln Classifier' && (status?.db_crashes??0)>0) return 'analyzing';
+    return 'idle';
+  };
+
+  const agentTask = (name) => {
+    const st = agentStatus(name);
+    if (name === 'Fuzzer Engine') {
+      if (st === 'running') {
+        if (phase === 'fuzzing')   return status?.fuzzer_target ? `Fuzzing: ${status.fuzzer_target}` : 'Running mutation fuzzer';
+        if (phase === 'compiling') return status?.fuzzer_last_event || 'Compiling harness…';
+      }
+      return status?.fuzzer_target ? `Last target: ${status.fuzzer_target}` : 'Awaiting next target';
+    }
+    if (name === 'Orchestrator') return fzRunning ? `Iteration ${status?.fuzzer_iteration??0} · ${_fmtUptime(status?.fuzzer_uptime??0)}` : 'Starting…';
+    if (name === 'Program Model') return phase==='analyzing' ? (status?.fuzzer_last_event||'Analyzing crash…') : 'Idle';
+    if (name === 'Vuln Classifier') return (status?.db_crashes??0)>0 ? `${status.db_crashes} crash(es) in DB` : 'Awaiting findings';
+    if (name === 'Patch Generator') return phase==='evolving' ? (status?.fuzzer_last_event||'Evolving harness…') : 'Idle';
+    if (name === 'Regression Tester') return (status?.fuzzer_crashes??0)>0 ? `${status.fuzzer_crashes} crash(es) this session` : 'Idle';
+    if (name === 'Seed Generator') return fzRunning ? 'Feeding mutation seeds' : 'Idle';
+    return 'Idle';
+  };
+
+  function _fmtUptime(secs) {
+    if (!secs) return '0s';
+    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+    return h>0 ? `${h}h ${m}m` : m>0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  const agentNames = ['Orchestrator','Seed Generator','Fuzzer Engine','Program Model','Vuln Classifier','Patch Generator','Regression Tester'];
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          ['Training Examples', status?.stage4_examples ?? '…', 'text-blue-600', 'From kerrigan-fantasma/data/stage4/'],
-          ['Crashes Found', status?.db_crashes ?? '…', 'text-red-600', 'kerrigan_db.crashes'],
+          ['Iterations', status?.fuzzer_iteration ?? '…', 'text-blue-600', 'Total fuzzing iterations run'],
+          ['Crashes Found', (status?.db_crashes ?? status?.fuzzer_crashes) ?? '…', 'text-red-600', 'kerrigan_db.crashes'],
           ['Sessions Run', status?.db_sessions ?? '…', 'text-purple-600', 'kerrigan_db.sessions'],
           ['Adaptive Rules', status?.adaptive_rules ?? '…', 'text-green-600', 'adaptive_defense.jsonl'],
         ].map(([label,val,color,sub],i)=>(
@@ -578,17 +620,26 @@ function AIPatcherView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h4 className="font-semibold text-gray-900 mb-3">Active AI Agents</h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-gray-900">Active AI Agents</h4>
+            {fzRunning && <span className="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">fuzzer live</span>}
+            {!fzRunning && !loading && <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">fuzzer offline</span>}
+          </div>
           <div className="space-y-2">
-            {agents.map(([name,st,task],i)=>(
-              <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
-                <div>
-                  <div className="font-medium text-gray-900 text-sm">{name}</div>
-                  <div className="text-xs text-gray-500">{task}</div>
+            {agentNames.map((name,i)=>{
+              const st = agentStatus(name);
+              const task = agentTask(name);
+              const dot = st==='running'?'bg-green-100 text-green-800':['coordinating','analyzing','validating'].includes(st)?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-500';
+              return (
+                <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="font-medium text-gray-900 text-sm">{name}</div>
+                    <div className="text-xs text-gray-500">{task}</div>
+                  </div>
+                  <div className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-2 ${dot}`}>{st}</div>
                 </div>
-                <div className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ml-2 ${st==='running'?'bg-green-100 text-green-800':['analyzing','coordinating','validating'].includes(st)?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`}>{st}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -597,24 +648,25 @@ function AIPatcherView() {
           <div className="space-y-2 text-sm">
             {[
               ['Kerrigan AI', status?.kerrigan_available?'Online':'Offline (using Ollama)', status?.kerrigan_available?'text-green-600':'text-yellow-600'],
+              ['Fuzzer', fzRunning ? `${phase} · ${status?.fuzzer_target||''}` : 'idle', fzRunning?'text-green-600':'text-gray-400'],
               ['PQC Keys', status?.pqc_keys_exist?'Found in keys/':'Not found', status?.pqc_keys_exist?'text-green-600':'text-red-600'],
               ['Training Data', status?.stage4_files>0?`${status.stage4_files} files ready`:'No files', status?.stage4_files>0?'text-green-600':'text-gray-400'],
               ['Safety Gate', 'Overmind — active', 'text-green-600'],
-              ['PQC Backend', 'liboqs (ML-KEM-768)', 'text-blue-600'],
             ].map(([k,v,c],i)=>(
               <div key={i} className="flex justify-between items-center">
                 <span className="text-gray-600">{k}</span>
-                <span className={`font-medium text-right ${c}`}>{loading?'…':v}</span>
+                <span className={`font-medium text-right max-w-[60%] truncate ${c}`}>{loading?'…':v}</span>
               </div>
             ))}
           </div>
 
           <div className="mt-4 bg-black rounded-xl p-3 font-mono text-xs leading-5">
-            <div className="text-cyan-400">[PATCHER] Multi-agent system active</div>
-            {status?.db_crashes>0 && <div className="text-red-400">[VULN] {status.db_crashes} crash(es) logged in kerrigan_db</div>}
-            {status?.adaptive_rules>0 && <div className="text-yellow-400">[ADAPT] {status.adaptive_rules} adaptive defense rules loaded</div>}
-            {status?.stage4_examples>0 && <div className="text-green-400">[TRAIN] {status.stage4_examples} training examples ready for RunPod</div>}
-            <div className="text-purple-400">[PQC] ML-KEM-768 keygen verified (liboqs)</div>
+            <div className="text-cyan-400">[PATCHER] Multi-agent system {fzRunning?'active':'starting…'}</div>
+            {status?.fuzzer_last_event && <div className="text-yellow-400">[FUZZER] {status.fuzzer_last_event}</div>}
+            {(status?.fuzzer_crashes??0)>0 && <div className="text-red-400">[VULN] {status.fuzzer_crashes} crash(es) this session</div>}
+            {(status?.db_crashes??0)>0 && <div className="text-orange-400">[DB] {status.db_crashes} total crash(es) stored</div>}
+            {(status?.adaptive_rules??0)>0 && <div className="text-green-400">[ADAPT] {status.adaptive_rules} adaptive rules loaded</div>}
+            {(status?.stage4_examples??0)>0 && <div className="text-blue-400">[TRAIN] {status.stage4_examples} examples ready</div>}
             <div className="text-green-400">[OVERMIND] Safety gate — live weaponization blocked</div>
           </div>
         </div>

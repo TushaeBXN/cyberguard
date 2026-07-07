@@ -61,6 +61,7 @@ async def lifespan(app):
     asyncio.create_task(_ssh_honeypot())
     asyncio.create_task(_web_honeypot())
     asyncio.create_task(_db_honeypot())
+    _start_fuzzer()
     print("CyberGuard AI server ready", flush=True)
     yield
 
@@ -71,6 +72,131 @@ _router   = None
 _overmind = None
 _memory   = None
 _model    = os.environ.get("KERRIGAN_MODEL", "kerrigan-fantasma:latest")
+
+# ── Fuzzer agent state (written by background thread, read by /patcher/status) ─
+import threading
+_fuzzer_lock  = threading.Lock()
+_fuzzer_state = {
+    "running":            False,
+    "phase":              "idle",      # idle|generating|compiling|fuzzing|triaging|analyzing|evolving
+    "target":             "",
+    "iteration":          0,
+    "session_crashes":    0,
+    "session_start":      None,
+    "last_event":         "",
+    "total_iterations":   0,
+}
+
+# Target rotation — cycles through protocol/format parsers
+_FUZZ_TARGETS = [
+    "HTTP request parser",
+    "DNS packet parser",
+    "SSH protocol parser",
+    "ZIP file parser",
+    "JSON parser",
+    "XML parser",
+    "TLS/SSL handshake parser",
+    "PDF file parser",
+]
+_target_cursor = 0
+
+def _set_phase(phase: str, event: str = "", target: str = ""):
+    with _fuzzer_lock:
+        _fuzzer_state["phase"] = phase
+        if event:     _fuzzer_state["last_event"] = event
+        if target:    _fuzzer_state["target"]      = target
+
+def _fuzzer_loop():
+    global _target_cursor
+    import importlib, sys as _sys
+
+    # Ensure kerrigan-fantasma is importable from this thread
+    if KERRIGAN_DIR not in _sys.path:
+        _sys.path.insert(0, KERRIGAN_DIR)
+
+    try:
+        from loop.evolution import EvolutionaryLoop
+    except Exception as e:
+        print(f"[Fuzzer] Cannot import EvolutionaryLoop: {e}", flush=True)
+        _set_phase("idle", f"import failed: {e}")
+        return
+
+    with _fuzzer_lock:
+        _fuzzer_state["running"] = True
+        _fuzzer_state["session_start"] = time.time()
+
+    print("[Fuzzer] Agent loop started", flush=True)
+
+    while True:
+        try:
+            target = _FUZZ_TARGETS[_target_cursor % len(_FUZZ_TARGETS)]
+            _target_cursor += 1
+
+            _set_phase("generating", f"generating harness for {target}", target)
+            loop = EvolutionaryLoop(n_fuzz=30, max_retries=2,
+                                    seed=_target_cursor)
+
+            # Patch phase callbacks into the loop so we get live status
+            orig_compile = loop.compiler.compile
+            def compile_with_phase(code, name="harness"):
+                _set_phase("compiling", f"compiling {name}")
+                return orig_compile(code, name=name)
+            loop.compiler.compile = compile_with_phase
+
+            orig_fuzz = loop.fuzzer.fuzz
+            def fuzz_with_phase(binary, seed=b"", n_inputs=100):
+                _set_phase("fuzzing", f"fuzzing {target} ({n_inputs} inputs)")
+                return orig_fuzz(binary, seed=seed, n_inputs=n_inputs)
+            loop.fuzzer.fuzz = fuzz_with_phase
+
+            _set_phase("generating", f"LLM generating harness for {target}")
+            session = loop.run(target, iterations=3)
+
+            # Write new crashes to DB
+            conn = _get_db()
+            if conn:
+                try:
+                    cur = conn.cursor()
+                    for crash in session.all_crashes:
+                        _set_phase("triaging", f"saving crash {crash.crash_id[:8]}")
+                        cur.execute("""
+                            INSERT IGNORE INTO crashes
+                                (crash_type, signal, exploitability, created_at)
+                            VALUES (%s, %s, %s, NOW())
+                        """, (crash.crash_type.value, getattr(crash, 'signal', ''),
+                              crash.exploitability))
+                    cur.execute("""
+                        INSERT INTO sessions
+                            (session_id, target, total_crashes, status, started_at)
+                        VALUES (%s, %s, %s, %s, NOW())
+                    """, (f"auto_{int(time.time())}", target,
+                          len(session.all_crashes), "complete"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"[Fuzzer] DB write error: {e}", flush=True)
+                finally:
+                    conn.close()
+
+            with _fuzzer_lock:
+                _fuzzer_state["session_crashes"] += len(session.all_crashes)
+                _fuzzer_state["total_iterations"] += len(session.iterations)
+
+            _set_phase("evolving", f"evolving harness after {len(session.all_crashes)} crashes")
+
+            # Rest 10s between targets so server stays responsive
+            time.sleep(10)
+
+        except Exception as e:
+            print(f"[Fuzzer] Loop error: {e}", flush=True)
+            _set_phase("idle", f"error: {str(e)[:80]}")
+            time.sleep(30)  # back off on errors
+
+def _start_fuzzer():
+    if not KERRIGAN_AVAILABLE:
+        print("[Fuzzer] kerrigan modules not available — skipping", flush=True)
+        return
+    t = threading.Thread(target=_fuzzer_loop, daemon=True, name="fuzzer-loop")
+    t.start()
 
 # ── MySQL direct connection ────────────────────────────────────────────────────
 import hashlib
@@ -102,6 +228,28 @@ def _ensure_tables():
                 INDEX idx_type (honeypot_type),
                 INDEX idx_ip   (attacker_ip),
                 INDEX idx_time (created_at)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS crashes (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                crash_type    VARCHAR(64),
+                signal        VARCHAR(16),
+                exploitability VARCHAR(16),
+                created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_type (crash_type),
+                INDEX idx_exploit (exploitability)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                session_id    VARCHAR(64) NOT NULL,
+                target        VARCHAR(256),
+                total_crashes INT DEFAULT 0,
+                status        VARCHAR(32),
+                started_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sid (session_id)
             )
         """)
         conn.commit()
@@ -699,15 +847,25 @@ async def patcher_status():
         except: pass
         finally: conn.close()
     pqc_ok = (Path(KERRIGAN_DIR) / "keys").exists()
+    with _fuzzer_lock:
+        fz = dict(_fuzzer_state)
     return {
-        "stage4_files": stage4_count,
-        "stage4_examples": stage4_examples,
-        "adaptive_rules": adaptive_rules,
-        "db_crashes": db_crashes,
-        "db_sessions": db_sessions,
+        "stage4_files":       stage4_count,
+        "stage4_examples":    stage4_examples,
+        "adaptive_rules":     adaptive_rules,
+        "db_crashes":         db_crashes,
+        "db_sessions":        db_sessions,
         "total_crashes_found": int(total_crashes),
-        "pqc_keys_exist": pqc_ok,
+        "pqc_keys_exist":     pqc_ok,
         "kerrigan_available": KERRIGAN_AVAILABLE,
+        # Live fuzzer state
+        "fuzzer_running":     fz["running"],
+        "fuzzer_phase":       fz["phase"],
+        "fuzzer_target":      fz["target"],
+        "fuzzer_iteration":   fz["total_iterations"],
+        "fuzzer_crashes":     fz["session_crashes"],
+        "fuzzer_last_event":  fz["last_event"],
+        "fuzzer_uptime":      int(time.time() - fz["session_start"]) if fz["session_start"] else 0,
     }
 
 
