@@ -83,6 +83,7 @@ const Target        = p => <Ico {...p} d={[['circle',{cx:'12',cy:'12',r:'10'}],[
 const Wifi          = p => <Ico {...p} d={[['path',{d:'M5 12.55a11 11 0 0 1 14.08 0'}],['path',{d:'M1.42 9a16 16 0 0 1 21.16 0'}],['path',{d:'M8.53 16.11a6 6 0 0 1 6.95 0'}],['line',{x1:'12',y1:'20',x2:'12.01',y2:'20'}]]}/>;
 const Database      = p => <Ico {...p} d={[['ellipse',{cx:'12',cy:'5',rx:'9',ry:'3'}],['path',{d:'M21 12c0 1.66-4 3-9 3s-9-1.34-9-3'}],['path',{d:'M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5'}]]}/>;
 const AlertTriangle = p => <Ico {...p} d={[['path',{d:'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'}],['line',{x1:'12',y1:'9',x2:'12',y2:'13'}],['line',{x1:'12',y1:'17',x2:'12.01',y2:'17'}]]}/>;
+const Monitor       = p => <Ico {...p} d={[['rect',{x:'2',y:'3',width:'20',height:'14',rx:'2',ry:'2'}],['line',{x1:'8',y1:'21',x2:'16',y2:'21'}],['line',{x1:'12',y1:'17',x2:'12',y2:'21'}]]}/>;
 const Search        = p => <Ico {...p} d={[['circle',{cx:'11',cy:'11',r:'8'}],['line',{x1:'21',y1:'21',x2:'16.65',y2:'16.65'}]]}/>;
 const Filter        = p => <Ico {...p} d={[['polygon',{points:'22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'}]]}/>;
 const Download      = p => <Ico {...p} d={[['path',{d:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'}],['polyline',{points:'7 10 12 15 17 10'}],['line',{x1:'12',y1:'15',x2:'12',y2:'3'}]]}/>;
@@ -826,22 +827,30 @@ function IDSIPSView({ threats }) {
   return (
     <div className="space-y-4">
       {/* Honeypot stat cards */}
-      <div className="grid grid-cols-3 gap-4">
-        {[['SSH Honeypot','Port 2222',hp.ssh,'text-purple-500',Shield],
-          ['Web Honeypot','Port 8080',hp.web,'text-blue-500',Network],
-          ['DB Honeypot','Port 3307',hp.database,'text-orange-500',Database]
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+        {[['SSH','Port 2222',hp.ssh,'text-purple-500',Shield],
+          ['Web','Port 8080',hp.web,'text-blue-500',Network],
+          ['MySQL','Port 3307',hp.database,'text-orange-500',Database],
+          ['FTP','Port 2121',hp.ftp,'text-green-500',Shield],
+          ['SMTP','Port 2525',hp.smtp,'text-yellow-500',Network],
+          ['RDP','Port 3389',hp.rdp,'text-red-500',Monitor],
         ].map(([label,sub,count,c,Icon],i)=>(
-          <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <Icon className={`w-6 h-6 ${c}`}/>
-              {hpLoading && <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"/>}
+          <div key={i} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 text-center">
+            <div className="flex items-center justify-center mb-1">
+              <Icon className={`w-5 h-5 ${c}`}/>
+              {hpLoading && <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse ml-1"/>}
             </div>
-            <div className={`text-2xl font-bold ${count>0?'text-red-600':'text-gray-300'}`}>{count}</div>
-            <div className="text-sm font-medium text-gray-700">{label}</div>
+            <div className={`text-xl font-bold ${count>0?'text-red-600':'text-gray-300'}`}>{count??0}</div>
+            <div className="text-xs font-medium text-gray-700">{label}</div>
             <div className="text-xs text-gray-400">{sub}</div>
           </div>
         ))}
       </div>
+      {(hp.subnets_blocked??0)>0 && (
+        <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+          {hp.subnets_blocked} subnet(s) auto-blocked after repeated hits
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Live threat detections */}
@@ -875,11 +884,13 @@ function IDSIPSView({ threats }) {
           </div>
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {(!hp.recent || hp.recent.length===0)
-              ? <div className="text-sm text-gray-400">No honeypot hits yet — listening on ports 2222, 8080, 3307</div>
-              : hp.recent.map((e,i)=>(
+              ? <div className="text-sm text-gray-400">No honeypot hits yet — listening on ports 2222, 8080, 3307, 2121, 2525, 3389</div>
+              : hp.recent.map((e,i)=>{
+                const typeColor={ssh:'bg-purple-100 text-purple-700',web:'bg-blue-100 text-blue-700',database:'bg-orange-100 text-orange-700',ftp:'bg-green-100 text-green-700',smtp:'bg-yellow-100 text-yellow-700',rdp:'bg-red-100 text-red-700'};
+                return (
                 <div key={i} className="text-sm bg-gray-50 rounded-lg p-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${e.honeypot_type==='ssh'?'bg-purple-100 text-purple-700':e.honeypot_type==='web'?'bg-blue-100 text-blue-700':'bg-orange-100 text-orange-700'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeColor[e.honeypot_type]||'bg-gray-100 text-gray-700'}`}>
                       {e.honeypot_type?.toUpperCase()}
                     </span>
                     <span className="font-mono text-red-600 text-xs flex-1">{e.attacker_ip}:{e.attacker_port}</span>
@@ -904,7 +915,7 @@ function IDSIPSView({ threats }) {
                     </div>
                   )}
                 </div>
-              ))
+              );})
             }
           </div>
           <div className="mt-3 p-2 bg-yellow-50 rounded text-xs text-yellow-800">

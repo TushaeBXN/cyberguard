@@ -61,6 +61,9 @@ async def lifespan(app):
     asyncio.create_task(_ssh_honeypot())
     asyncio.create_task(_web_honeypot())
     asyncio.create_task(_db_honeypot())
+    asyncio.create_task(_ftp_honeypot())
+    asyncio.create_task(_smtp_honeypot())
+    asyncio.create_task(_rdp_honeypot())
     _start_fuzzer()
     print("CyberGuard AI server ready", flush=True)
     yield
@@ -288,7 +291,65 @@ def _block_ip(ip: str):
         print(f"[Firewall] Block failed for {ip}: {e}")
 
 
+# ── Subnet-level blocking ─────────────────────────────────────────────────────
+_subnet_hits: dict = {}          # "/24 prefix" -> hit count
+_seen_ips:    set  = set()       # IPs seen this server session (for first-hit alert)
+_SUBNET_BLOCK_THRESHOLD = 3      # block /24 after this many distinct hits
+
+def _subnet_prefix(ip: str) -> str:
+    parts = ip.split(".")
+    return ".".join(parts[:3]) + ".0/24" if len(parts) == 4 else ip
+
+def _check_subnet_block(ip: str):
+    prefix = _subnet_prefix(ip)
+    _subnet_hits[prefix] = _subnet_hits.get(prefix, 0) + 1
+    if _subnet_hits[prefix] == _SUBNET_BLOCK_THRESHOLD:
+        print(f"[Firewall] Subnet threshold hit — blocking {prefix}", flush=True)
+        try:
+            import subprocess
+            subprocess.run(
+                ["sudo", "/sbin/pfctl", "-t", _PF_TABLE, "-T", "add", prefix],
+                capture_output=True, timeout=5
+            )
+            with open(_PF_BLOCKLIST, "a") as f:
+                f.write(prefix + "\n")
+        except Exception as e:
+            print(f"[Firewall] Subnet block error: {e}")
+
+def _send_alert(honeypot_type: str, ip: str, port: int, payload: str):
+    """Send a Resend email alert on first hit from a new IP."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key:
+        return
+    try:
+        import resend
+        resend.api_key = api_key
+        from_addr  = os.environ.get("ALERT_FROM",  "alerts@cyberguard.local")
+        to_addr    = os.environ.get("ALERT_EMAIL",  "brian.thomas.t@gmail.com")
+        resend.Emails.send({
+            "from":    from_addr,
+            "to":      [to_addr],
+            "subject": f"[CyberGuard] New attacker: {ip} → {honeypot_type}",
+            "html":    f"""
+<h2>Honeypot Alert</h2>
+<table>
+  <tr><td><b>Type</b></td><td>{honeypot_type}</td></tr>
+  <tr><td><b>Attacker IP</b></td><td>{ip}</td></tr>
+  <tr><td><b>Port</b></td><td>{port}</td></tr>
+  <tr><td><b>Payload</b></td><td><code>{payload[:400]}</code></td></tr>
+  <tr><td><b>Subnet hits</b></td><td>{_subnet_hits.get(_subnet_prefix(ip), 1)}</td></tr>
+</table>
+<p>IP has been auto-blocked in pf.</p>
+""",
+        })
+        print(f"[Alert] Email sent for new attacker {ip}", flush=True)
+    except Exception as e:
+        print(f"[Alert] Email failed: {e}", flush=True)
+
 def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
+    first_hit = attacker_ip not in _seen_ips
+    _seen_ips.add(attacker_ip)
+
     conn = _get_db()
     if not conn: return
     try:
@@ -298,7 +359,6 @@ def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
             (honeypot_type, attacker_ip, int(attacker_port or 0), payload[:1000])
         )
         conn.commit()
-        # Auto-feed into Kerrigan memory
         _save_memory_to_db(
             f"Honeypot hit [{honeypot_type}]: attacker {attacker_ip}:{attacker_port} — {payload[:200]}",
             expert="honeypot",
@@ -309,8 +369,17 @@ def _log_honeypot(honeypot_type, attacker_ip, attacker_port, payload=""):
     finally:
         conn.close()
 
-    # Block attacker immediately — runs after DB so a DB failure doesn't skip it
+    # Block attacker immediately
     _block_ip(attacker_ip)
+    # Subnet-level block if threshold reached
+    _check_subnet_block(attacker_ip)
+    # Email on first hit from this IP
+    if first_hit:
+        threading.Thread(
+            target=_send_alert,
+            args=(honeypot_type, attacker_ip, attacker_port, payload),
+            daemon=True
+        ).start()
 
 def _ensure_conversations_table():
     conn = _get_db()
@@ -477,6 +546,94 @@ async def _db_honeypot(host="0.0.0.0", port=3307):
             await srv.serve_forever()
     except Exception as e:
         print(f"[Honeypot] Database failed on {port}: {e}")
+
+FTP_BANNER  = b"220 ProFTPD 1.3.6 Server (FTP) [::]\r\n"
+SMTP_BANNER = b"220 mail.cyberguard.local ESMTP Postfix (Ubuntu)\r\n"
+SMTP_EHLO   = b"250-mail.cyberguard.local\r\n250-SIZE 52428800\r\n250-STARTTLS\r\n250 AUTH LOGIN PLAIN\r\n"
+RDP_NACK    = bytes([0x03, 0x00, 0x00, 0x13, 0x0e, 0xd0, 0x00, 0x00, 0x12, 0x34, 0x00,
+                     0x02, 0x01, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00])
+
+async def _ftp_honeypot(host="0.0.0.0", port=2121):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        try:
+            writer.write(FTP_BANNER)
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(512), timeout=15)
+            payload = data.decode("utf-8", errors="replace").strip()
+        except Exception:
+            payload = ""
+        finally:
+            writer.close()
+        print(f"[Honeypot-FTP] {ip}:{p} — {repr(payload[:120])}")
+        _log_honeypot("ftp", ip, p, payload)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] FTP listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] FTP failed on {port}: {e}")
+
+async def _smtp_honeypot(host="0.0.0.0", port=2525):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        lines = []
+        try:
+            writer.write(SMTP_BANNER)
+            await writer.drain()
+            # Read up to 3 SMTP commands so we capture EHLO + AUTH attempts
+            for _ in range(3):
+                line = await asyncio.wait_for(reader.readline(), timeout=10)
+                if not line:
+                    break
+                decoded = line.decode("utf-8", errors="replace").strip()
+                lines.append(decoded)
+                upper = decoded.upper()
+                if upper.startswith("EHLO") or upper.startswith("HELO"):
+                    writer.write(SMTP_EHLO)
+                else:
+                    writer.write(b"250 OK\r\n")
+                await writer.drain()
+        except Exception:
+            pass
+        finally:
+            writer.close()
+        payload = " | ".join(lines)
+        print(f"[Honeypot-SMTP] {ip}:{p} — {payload[:120]}")
+        _log_honeypot("smtp", ip, p, payload)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] SMTP listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] SMTP failed on {port}: {e}")
+
+async def _rdp_honeypot(host="0.0.0.0", port=3389):
+    async def handle(reader, writer):
+        peer = writer.get_extra_info("peername") or ("unknown", 0)
+        ip, p = peer[0], peer[1]
+        try:
+            data = await asyncio.wait_for(reader.read(1024), timeout=10)
+            writer.write(RDP_NACK)
+            await writer.drain()
+            payload = data.hex()[:160]
+        except Exception:
+            payload = ""
+        finally:
+            writer.close()
+        print(f"[Honeypot-RDP] {ip}:{p} — {payload[:120]}")
+        _log_honeypot("rdp", ip, p, payload)
+    try:
+        srv = await asyncio.start_server(handle, host, port)
+        print(f"[Honeypot] RDP listening on {port}", flush=True)
+        async with srv:
+            await srv.serve_forever()
+    except Exception as e:
+        print(f"[Honeypot] RDP failed on {port}: {e}")
 
 
 @app.post("/chat")
@@ -889,14 +1046,19 @@ async def honeypot_counts():
         for r in recent:
             if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
         return {
-            "ssh":      rows.get("ssh", 0),
-            "web":      rows.get("web", 0),
+            "ssh":      rows.get("ssh",      0),
+            "web":      rows.get("web",      0),
             "database": rows.get("database", 0),
+            "ftp":      rows.get("ftp",      0),
+            "smtp":     rows.get("smtp",     0),
+            "rdp":      rows.get("rdp",      0),
             "total":    sum(rows.values()),
             "recent":   recent,
+            "subnets_blocked": len([v for v in _subnet_hits.values() if v >= _SUBNET_BLOCK_THRESHOLD]),
         }
     except Exception as e:
-        return {"ssh": 0, "web": 0, "database": 0, "total": 0, "recent": [], "error": str(e)}
+        return {"ssh": 0, "web": 0, "database": 0, "ftp": 0, "smtp": 0, "rdp": 0,
+                "total": 0, "recent": [], "error": str(e)}
     finally:
         conn.close()
 
