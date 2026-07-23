@@ -169,4 +169,20 @@ function stats() {
   ]));
 }
 
-module.exports = { init, refresh, check, stats };
+/**
+ * Merge external IP/CIDR text into a named list without replacing it.
+ * Called by feed-ingester after fetching AbuseIPDB / Emerging Threats.
+ * @param {string} listName  'inbound' or 'outbound'
+ * @param {string} text      newline-separated IPs/CIDRs (comments with # ignored)
+ */
+function inject(listName, text) {
+  if (!db[listName]) db[listName] = { exact: new Set(), cidrs: [], updated: 0 };
+  const tmp = { exact: new Set(), cidrs: [], updated: 0 };
+  parseList(text, tmp);
+  for (const ip of tmp.exact) db[listName].exact.add(ip);
+  for (const c of tmp.cidrs) db[listName].cidrs.push(c);
+  db[listName].cidrs.sort((a, b) => a[0] - b[0]);
+  db[listName].updated = Date.now();
+}
+
+module.exports = { init, refresh, check, stats, inject };

@@ -7,7 +7,8 @@ const fs      = require('fs');
 const si      = require('systeminformation');
 const store   = require('./store');
 const feeds   = require('./feeds');
-const blocklist = require('./blocklist');
+const blocklist     = require('./blocklist');
+const feedIngester  = require('./threat-intel/feed-ingester');
 const kerrigan = require('./kerrigan-bridge');
 
 // ── Window state persistence ──────────────────────────────────────────────────
@@ -617,6 +618,7 @@ function fetchJSON(url, headers) {
 app.whenReady().then(() => {
   store.init(app.getPath('userData'));
   blocklist.init(app.getPath('userData'));
+  feedIngester.init(app.getPath('userData'), store, blocklist);
   threatLogPath = path.join(app.getPath('userData'), 'threat-history.jsonl');
   kerrigan.start();
   createWindow();
