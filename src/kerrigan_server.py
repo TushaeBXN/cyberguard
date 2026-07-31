@@ -164,7 +164,7 @@ def _fuzzer_loop():
                         _set_phase("triaging", f"saving crash {crash.crash_id[:8]}")
                         cur.execute("""
                             INSERT IGNORE INTO crashes
-                                (crash_type, signal, exploitability, created_at)
+                                (crash_type, `signal`, exploitability, created_at)
                             VALUES (%s, %s, %s, NOW())
                         """, (crash.crash_type.value, getattr(crash, 'signal', ''),
                               crash.exploitability))
@@ -237,7 +237,7 @@ def _ensure_tables():
             CREATE TABLE IF NOT EXISTS crashes (
                 id            INT AUTO_INCREMENT PRIMARY KEY,
                 crash_type    VARCHAR(64),
-                signal        VARCHAR(16),
+                `signal`      VARCHAR(16),
                 exploitability VARCHAR(16),
                 created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_type (crash_type),
@@ -711,7 +711,25 @@ async def chat(request: Request):
         "You have DIRECT ACCESS to this machine's live security telemetry — it is injected below. "
         "NEVER say you cannot access the system or lack real-time data. You have it. Use it. "
         "Answer specifically about THIS machine using the data provided. "
-        "Be direct, technical, and concise. No disclaimers. No generic advice unless asked.\n"
+        "Be direct, technical, and concise. No disclaimers. No generic advice unless asked.\n\n"
+        "## TOOL KNOWLEDGE: AI-ASSISTED CYBERSECURITY ECOSYSTEM\n"
+        "When a user asks about a vulnerability, finding, or task — recommend the appropriate tool.\n\n"
+        "AUTOTRIAGE (post-scan, alert reduction): nuclei-autotriage, honeyslop, nano-analyzer, ai-soc-triage-assistant\n"
+        "AGENT & MCP SECURITY (scanning skills/plugins/MCP servers): agent-audit, aguara, agent-scan(Snyk), skill-scanner(Cisco), mcp-scanner(Cisco), agentic-radar, agentguard, defenseclaw\n"
+        "AGENT SECURITY FRAMEWORKS (governance, detection rules): asamm (OWASP SAMM for AI, maps NIST AI RMF), agent-threat-rules (ATR), AgentDojo\n"
+        "ML SUPPLY CHAIN (before loading any .pt/.pkl/.h5): modelscan (Protect AI), fickling (Trail of Bits), picklescan\n"
+        "PENTEST / RED-TEAM AGENTS (autonomous exploitation): PentestGPT, PentAGI, CAI, hackingBuddyGPT, HexStrike-AI, PentestAgent, Pentest-Swarm-AI\n"
+        "AI-POWERED SAST (code review, vuln discovery): Vulnhuntr (Python RCE), IRIS (Java+CodeQL), xvulnhuntr (C#/Java/Go), claude-code-security-review\n"
+        "LLM-DRIVEN FUZZING (harness generation): oss-fuzz-gen (Google, 26 CVEs), PromptFuzz, Fuzz4All, ChatAFL, TitanFuzz\n"
+        "FUZZING THE LLM (system prompt hardening, jailbreak discovery): LLMFuzzer, ps-fuzz (16 attack types), FuzzyAI (CyberArk), ai-prompt-fuzzer (Burp)\n"
+        "THREAT INTELLIGENCE (IOC/TTP extraction): trs, TI-Mindmap-GPT, aiocrioc, IATelligence, MCP_Security (ORKL)\n"
+        "LOG ANALYSIS / SIEM / SOC (alert investigation, IR): AI-SOC-Agent (ELK+IRIS), agentic-soc-platform, AttackGen\n"
+        "LLM RED-TEAMING & GUARDRAILS (safety evaluation): PyRIT (Microsoft), garak (50+ probe types)\n"
+        "CTF / EXPLOIT BENCHMARKS (model capability eval): NYU-CTF-Bench (200 challenges), Cybench (40 challenges)\n"
+        "CLOUD / IaC (CloudFormation/Terraform review): CloudGPT\n\n"
+        "Decision logic: scanner output→AUTOTRIAGE | crash analysis→SAST tools | checkpoint load→ML SUPPLY CHAIN | "
+        "MCP/skill scan→AGENT & MCP SECURITY | IOC/TTP→THREAT INTELLIGENCE | red-team LLM→LLM RED-TEAMING | "
+        "system prompt test→FUZZING THE LLM | code vuln discovery→AI-POWERED SAST\n"
     )
     system += "\n=== LIVE SYSTEM STATE (server-gathered) ===\n" + server_ctx + "\n"
     if system_ctx:
@@ -1176,6 +1194,59 @@ async def firewall_unblock(ip: str):
         except FileNotFoundError:
             pass
         return {"unblocked": ip, "success": r.returncode == 0}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Protegrity Data Protection ────────────────────────────────────────────────
+
+_pty_protector = None
+
+def _get_protector():
+    global _pty_protector
+    if _pty_protector is None:
+        try:
+            from appython import Protector
+            _pty_protector = Protector()
+        except Exception as e:
+            raise RuntimeError(f"Protegrity SDK unavailable: {e}")
+    return _pty_protector
+
+@app.post("/protegrity/protect")
+async def protegrity_protect(request: Request):
+    """Protect (tokenize) a list of field values using Protegrity Developer Edition."""
+    try:
+        body = await request.json()
+        fields = body.get("fields", [])
+        policy_user = body.get("policy_user", "superuser")
+        print(f"[Protegrity] protect called — {len(fields)} fields, user={policy_user}", flush=True)
+        print(f"[Protegrity] EMAIL env: {os.environ.get('DEV_EDITION_EMAIL', 'MISSING')}", flush=True)
+        protector = _get_protector()
+        session = protector.create_session(policy_user)
+        results = []
+        for f in fields:
+            token = session.protect(f["value"], f["element"])
+            results.append({"original": f["value"], "token": token, "element": f["element"]})
+        print(f"[Protegrity] protected {len(results)} tokens OK", flush=True)
+        return {"protected": results, "count": len(results)}
+    except Exception as e:
+        print(f"[Protegrity] ERROR: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/protegrity/unprotect")
+async def protegrity_unprotect(request: Request):
+    """Unprotect (de-tokenize) a list of token values using Protegrity Developer Edition."""
+    try:
+        body = await request.json()
+        fields = body.get("fields", [])  # [{ "token": "sAmNa.PTAu", "element": "name" }, ...]
+        policy_user = body.get("policy_user", "superuser")
+        protector = _get_protector()
+        session = protector.create_session(policy_user)
+        results = []
+        for f in fields:
+            original = session.unprotect(f["token"], f["element"])
+            results.append({"token": f["token"], "original": original, "element": f["element"]})
+        return {"unprotected": results, "count": len(results)}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -60,6 +60,13 @@ contextBridge.exposeInMainWorld('cyberguard', {
 
   off: (channel) => ipcRenderer.removeAllListeners(channel),
 
+  // Protegrity Real Tokenization
+  protegrityProtect:   (fields, policyUser) => ipcRenderer.invoke('protegrity-protect', fields, policyUser),
+  protegrityUnprotect: (fields, policyUser) => ipcRenderer.invoke('protegrity-unprotect', fields, policyUser),
+
+  // Protegrity Demo Pipeline
+  demoLlmInfer: (tokenizedRecords) => ipcRenderer.invoke('demo-llm-infer', tokenizedRecords),
+
   // Kerrigan AI
   kerriganChat:   (msg, history, ctx) => ipcRenderer.invoke('kerrigan-chat', msg, history, ctx),
   kerriganStatus: ()             => ipcRenderer.invoke('kerrigan-status'),

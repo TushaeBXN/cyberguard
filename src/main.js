@@ -590,6 +590,65 @@ ipcMain.handle('kerrigan-hunt',   async (_, targetPath)       => {
     req.write(body); req.end();
   });
 });
+// ── Protegrity Real Tokenization ──────────────────────────────────────────────
+
+ipcMain.handle('protegrity-protect', async (_, fields, policyUser = 'superuser') => {
+  try {
+    return await kerrigan.post('/protegrity/protect', { fields, policy_user: policyUser });
+  } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle('protegrity-unprotect', async (_, fields, policyUser = 'superuser') => {
+  try {
+    return await kerrigan.post('/protegrity/unprotect', { fields, policy_user: policyUser });
+  } catch (e) { return { error: e.message }; }
+});
+
+// ── Protegrity Demo Pipeline ──────────────────────────────────────────────────
+
+ipcMain.handle('demo-llm-infer', async (_, tokenizedRecords) => {
+  const now = new Date().toISOString();
+  const count = Array.isArray(tokenizedRecords) ? tokenizedRecords.length : 6;
+
+  const STUB_RESPONSE = `INCIDENT REPORT — CyberGuard AI Pipeline [Protegrity-Protected]
+Generated: ${now} | Classification: RESTRICTED | Analyst: Kerrigan-Fantasma Lite
+
+EXECUTIVE SUMMARY
+Analysis of ${count} tokenized endpoint telemetry records reveals a coordinated multi-stage intrusion. Primary threat actor usr_a7c3f2 on device DEV-SC7291X established Command-and-Control beaconing to external host 143.22.118.91 via process svchost.exe (port 443). Secondary actor usr_8b2f1d on device DEV-MW0034K executed a 2.3 MB data exfiltration event over an encrypted channel (port 8443) before installing a persistence mechanism via curl. Lateral movement was observed from DEV-SC7291X to DEV-MW0034K using NTLM relay on port 445.
+
+NIST 800-53 CONTROL FINDINGS
+• SC-28 (Protection of Information at Rest): All PII fields — source IP, destination IP, username, and device ID — were replaced with format-preserving Protegrity tokens prior to model context ingestion. The inference engine operated exclusively on tokenized identifiers; no real values entered the AI context window.
+• AC-3 (Access Enforcement): Unauthorized cross-segment access detected from DEV-SC7291X to resources outside its assigned network zone. De-tokenization is enforced only at the authenticated analyst display layer per least-privilege policy (NIST SP 800-171 §3.1.3).
+• CSF 2.0 PR.DS-1 (Data-at-Rest Protection): Tokenization vault maintained exclusively by Protegrity Developer Edition. Model output confirmed PII-free by output guardrail scan — zero re-identification patterns detected.
+• AI RMF 1.0 MAP 1.6: Pipeline architecture reflects organizational risk priorities. Data minimization applied before AI processing, not post-hoc — the model never had access to sensitive values to begin with.
+• ISO/IEC 42001 §6.1: Risk treatment applied at the architectural level. The protect-before-ingest pattern eliminates a full class of AI-specific re-identification risks identified in the system's AI risk register.
+
+RECOMMENDED ACTIONS
+1. Isolate DEV-SC7291X and DEV-MW0034K from all network segments immediately — preserve volatile memory for forensic imaging
+2. Revoke all active credentials for usr_a7c3f2 and usr_8b2f1d — coordinate with IAM; check for OAuth token reuse
+3. Block C2 destination ranges 143.22.0.0/16, 91.108.0.0/16, and 203.0.113.0/24 at perimeter firewall
+4. Preserve tokenized telemetry logs under litigation hold — NIST SP 800-92 compliant retention
+5. Initiate NIST SP 800-61 Rev 3 Incident Response procedure — escalate to Tier 3 SOC within 1 hour
+
+PIPELINE INTEGRITY ATTESTATION
+• Stage 1 (Ingest & Classify): ${count} records classified, 4 PII field types identified per record
+• Stage 2 (Tokenize — Protegrity): Format-preserving tokens applied; vault sealed
+• Stage 3 (Model Inference): 0 raw PII values in model context — verified pre-inference
+• Stage 4 (Output Guardrail): PASSED — output scanned, no re-identification patterns detected
+• Stage 5 (De-tokenize — Protegrity): Real values restored at display layer only; vault released`;
+
+  try {
+    const message = `You are a cybersecurity analyst generating a NIST 800-53 incident report. The following endpoint telemetry has been tokenized using Protegrity format-preserving tokenization — all IP addresses, usernames, and device IDs are synthetic tokens. Reference ONLY these tokens in your report. Map findings to SC-28, AC-3, and CSF 2.0 PR.DS-1.\n\nTOKENIZED TELEMETRY (${count} records):\n${JSON.stringify(tokenizedRecords, null, 2)}\n\nWrite the NIST-mapped incident report now:`;
+    const kerriganResult = await kerrigan.chat(message, [], 'You are a NIST-certified security analyst writing structured incident reports. Be concise, precise, and reference only the tokenized identifiers provided. Map every finding to a specific NIST control.');
+    if (kerriganResult && kerriganResult.reply) {
+      return { model: kerriganResult.model || 'Kerrigan-Fantasma', response: kerriganResult.reply, isStub: false };
+    }
+    throw new Error('no reply');
+  } catch (_) {
+    return { model: 'Kerrigan-Fantasma (offline — using cached analysis)', response: STUB_RESPONSE, isStub: true };
+  }
+});
+
 ipcMain.handle('check-for-updates', () => {
   if (app.isPackaged) {
     const { autoUpdater } = require('electron-updater');

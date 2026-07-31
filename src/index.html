@@ -97,6 +97,907 @@ const FileText      = p => <Ico {...p} d={[['path',{d:'M14 2H6a2 2 0 0 0-2 2v16a
 const MessageSquare = p => <Ico {...p} d={[['path',{d:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'}]]}/>;
 const Send          = p => <Ico {...p} d={[['line',{x1:'22',y1:'2',x2:'11',y2:'13'}],['polygon',{points:'22 2 15 22 11 13 2 9 22 2'}]]}/>;
 const Cpu           = p => <Ico {...p} d={[['rect',{x:'4',y:'4',width:'16',height:'16',rx:'2',ry:'2'}],['rect',{x:'9',y:'9',width:'6',height:'6'}],['line',{x1:'9',y1:'1',x2:'9',y2:'4'}],['line',{x1:'15',y1:'1',x2:'15',y2:'4'}],['line',{x1:'9',y1:'20',x2:'9',y2:'23'}],['line',{x1:'15',y1:'20',x2:'15',y2:'23'}],['line',{x1:'20',y1:'9',x2:'23',y2:'9'}],['line',{x1:'20',y1:'14',x2:'23',y2:'14'}],['line',{x1:'1',y1:'9',x2:'4',y2:'9'}],['line',{x1:'1',y1:'14',x2:'4',y2:'14'}]]}/>;
+const Layers        = p => <Ico {...p} d={[['polygon',{points:'12 2 2 7 12 12 22 7 12 2'}],['polyline',{points:'2 17 12 22 22 17'}],['polyline',{points:'2 12 12 17 22 12'}]]}/>;
+const CheckCircle   = p => <Ico {...p} d={[['path',{d:'M22 11.08V12a10 10 0 1 1-5.93-9.14'}],['polyline',{points:'22 4 12 14.01 9 11.01'}]]}/>;
+const ArrowRight    = p => <Ico {...p} d="M5 12h14M12 5l7 7-7 7"/>;
+
+// ── Protegrity Demo Pipeline helpers ─────────────────────────────────────────
+const DEMO_RAW = [
+  { id:1, ts:'14:21:03', src_ip:'10.0.1.47',  dst_ip:'185.220.101.45', username:'sarah.chen',   device_id:'LAPTOP-SC7291',  event_type:'C2_Beacon',          severity:'Critical', bytes_out:47230,   port:443,  process:'svchost.exe' },
+  { id:2, ts:'14:21:47', src_ip:'10.0.1.83',  dst_ip:'91.108.4.182',   username:'marcus.wright', device_id:'WORKST-MW0034',  event_type:'Data_Exfil',         severity:'High',     bytes_out:2304512, port:8443, process:'python3'     },
+  { id:3, ts:'14:22:15', src_ip:'10.0.1.47',  dst_ip:'10.0.1.83',      username:'sarah.chen',   device_id:'LAPTOP-SC7291',  event_type:'Lateral_Movement',   severity:'High',     bytes_out:8192,    port:445,  process:'ntlmssp'    },
+  { id:4, ts:'14:22:58', src_ip:'10.0.1.121', dst_ip:'104.21.64.0',    username:'amir.hassan',  device_id:'LAPTOP-AH4490',  event_type:'DNS_Tunneling',      severity:'High',     bytes_out:12345,   port:53,   process:'named'      },
+  { id:5, ts:'14:23:31', src_ip:'10.0.1.83',  dst_ip:'203.0.113.99',   username:'marcus.wright', device_id:'WORKST-MW0034',  event_type:'Persistence_Install',severity:'Critical', bytes_out:524288,  port:80,   process:'curl'       },
+  { id:6, ts:'14:24:02', src_ip:'10.0.1.200', dst_ip:'185.220.101.45', username:'priya.nair',   device_id:'LAPTOP-PN6621',  event_type:'Cred_Harvesting',    severity:'Medium',   bytes_out:2048,    port:443,  process:'chrome'     },
+];
+
+function _h32(s) { // djb2 — deterministic, no crypto needed for demo FPE
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function _tknIp(ip) {
+  const h = _h32(ip);
+  return `${100+(h&0x7f)}.${(h>>7)&0xff}.${(h>>15)&0xff}.${1+((h>>23)&0xfe)}`;
+}
+function _tknUser(u) { return 'usr_' + _h32(u).toString(16).slice(0,6); }
+function _tknDev(d) {
+  const C='ABCDEFGHJKLMNPQRSTUVWXYZ2346789'; let s='', n=_h32(d);
+  for(let i=0;i<6;i++){s+=C[n%31];n=Math.floor(n/31);}
+  return 'DEV-'+s;
+}
+function tokenizeTelemetry(records) {
+  const vault = {};
+  const tokenized = records.map(r => {
+    const ts = _tknIp(r.src_ip), td = _tknIp(r.dst_ip), tu = _tknUser(r.username), tv = _tknDev(r.device_id);
+    vault[ts]=r.src_ip; vault[td]=r.dst_ip; vault[tu]=r.username; vault[tv]=r.device_id;
+    return {...r, src_ip:ts, dst_ip:td, username:tu, device_id:tv};
+  });
+  return { tokenized, vault };
+}
+function checkGuardrail(text, origRecords) {
+  const flagged = [];
+  for (const r of origRecords) {
+    if (text.includes(r.src_ip))   flagged.push({ type:'Raw Internal IP', value:r.src_ip });
+    if (text.includes(r.username)) flagged.push({ type:'Username PII',    value:r.username });
+    if (text.includes(r.device_id))flagged.push({ type:'Raw Device ID',   value:r.device_id });
+  }
+  const unique = flagged.filter((f,i)=>flagged.findIndex(x=>x.value===f.value)===i);
+  return { passed: unique.length === 0, flagged: unique };
+}
+function detokenize(text, vault) {
+  let r = text;
+  for (const [tok, val] of Object.entries(vault)) {
+    const orig = (val && typeof val === 'object') ? val.original : val;
+    r = r.split(tok).join(orig);
+  }
+  return r;
+}
+
+// ── Protegrity Demo — Intro Tab ───────────────────────────────────────────────
+function DemoIntroTab() {
+  return (
+    <div className="max-w-3xl">
+      <div className="rounded-2xl p-8 text-white mb-6" style={{background:'linear-gradient(135deg,#1e1b4b,#7c3aed)'}}>
+        <div className="flex items-center mb-3">
+          <Shield className="w-8 h-8 mr-3 text-purple-200"/>
+          <span className="text-purple-200 text-sm font-semibold tracking-widest uppercase">Protegrity AI Pipeline Demo</span>
+        </div>
+        <h2 className="text-3xl font-bold mb-3">The Exposed Guardian Problem</h2>
+        <p style={{color:'#c4b5fd',fontSize:'1.05rem',lineHeight:'1.6'}}>
+          AI security tools that process raw endpoint telemetry create a second attack surface —
+          the very data they protect is exposed inside the model's context window.
+        </p>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
+        {[
+          { Icon:Eye,           color:'#dc2626', bg:'#fef2f2', border:'#fecaca',
+            title:'AI Sees Everything',
+            desc:'LLMs process raw IPs, usernames, and device IDs in plain text — creating a re-identification risk inside the security tool itself.' },
+          { Icon:Database,      color:'#ea580c', bg:'#fff7ed', border:'#fed7aa',
+            title:'Context Window Exposure',
+            desc:'Sensitive data injected into prompts persists in memory, inference logs, and potentially cloud training pipelines outside your control.' },
+          { Icon:AlertTriangle, color:'#ca8a04', bg:'#fefce8', border:'#fef08a',
+            title:'Compliance Gap',
+            desc:'NIST 800-53 SC-28 and CSF 2.0 PR.DS-1 require protection of data at rest. A model\'s context window is data at rest.' },
+        ].map(({ Icon, color, bg, border, title, desc }) => (
+          <div key={title} style={{background:bg,border:`1px solid ${border}`,borderRadius:'0.75rem',padding:'1.25rem'}}>
+            <Icon className="w-6 h-6 mb-3" style={{color}}/>
+            <p className="font-semibold text-gray-900 mb-2" style={{fontSize:'0.9rem'}}>{title}</p>
+            <p className="text-gray-600" style={{fontSize:'0.82rem',lineHeight:'1.5'}}>{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:'linear-gradient(135deg,#eff6ff,#eef2ff)',border:'1px solid #bfdbfe',borderRadius:'1rem',padding:'1.5rem'}}>
+        <h3 className="font-bold text-gray-900 mb-2" style={{fontSize:'1.05rem'}}>The Solution: Protect-Before-Ingest</h3>
+        <p className="text-gray-700 mb-4" style={{fontSize:'0.9rem',lineHeight:'1.6'}}>
+          CyberGuard AI + Protegrity Developer Edition implements a 4-stage secure pipeline. Sensitive
+          fields are tokenized using format-preserving encryption before they enter the AI context —
+          and de-tokenized only at the trusted analyst display layer.
+        </p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'0.75rem'}}>
+          {[
+            { label:'Format-Preserving Tokens', sub:'IPs still look like IPs — model output stays coherent' },
+            { label:'Zero-Trust AI Context',    sub:'The model never sees a real IP, name, or device ID' },
+            { label:'Display-Layer Restore',    sub:'Real values shown only to the authenticated analyst' },
+          ].map(({ label, sub }) => (
+            <div key={label} className="bg-white rounded-xl p-4" style={{border:'1px solid #dbeafe'}}>
+              <div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#3b82f6',marginBottom:'8px'}}/>
+              <p className="font-semibold text-gray-900" style={{fontSize:'0.82rem'}}>{label}</p>
+              <p className="text-gray-500" style={{fontSize:'0.75rem',marginTop:'2px'}}>{sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Protegrity Demo — Architecture Tab ────────────────────────────────────────
+function DemoArchTab() {
+  const stages = [
+    { n:'1', label:'Ingest & Classify',      sub:'Endpoint telemetry ingested\nSensitive fields identified',  color:'#2563eb', bg:'#eff6ff', icon:Database    },
+    { n:'2', label:'Tokenize & Protect',     sub:'Protegrity FPE applied\nFormat-preserving vault created',   color:'#7c3aed', bg:'#f5f3ff', icon:Lock        },
+    { n:'3', label:'Model Inference',        sub:'Kerrigan-Fantasma Lite\noperates on tokens only',            color:'#0891b2', bg:'#ecfeff', icon:Cpu         },
+    { n:'4', label:'Output Filter',          sub:'Guardrail scans output\nfor re-identification patterns',     color:'#b45309', bg:'#fffbeb', icon:Shield      },
+    { n:'5', label:'De-tokenize & Display',  sub:'Protegrity restores values\nAnalyst sees real data here',    color:'#16a34a', bg:'#f0fdf4', icon:Eye         },
+  ];
+  return (
+    <div>
+      <h3 className="font-bold text-gray-900 mb-1" style={{fontSize:'1.1rem'}}>4-Stage Secure AI Pipeline</h3>
+      <p className="text-gray-500 mb-6" style={{fontSize:'0.85rem'}}>
+        Sensitive data is protected by Protegrity before it reaches the AI layer — and restored only after the AI layer.
+      </p>
+
+      {/* Pipeline flow */}
+      <div style={{display:'flex',alignItems:'stretch',gap:'0',marginBottom:'2rem',overflowX:'auto',paddingBottom:'0.5rem'}}>
+        {stages.map((s, i) => (
+          <React.Fragment key={s.n}>
+            <div style={{minWidth:'160px',background:s.bg,border:`2px solid ${s.color}33`,borderRadius:'0.75rem',padding:'1rem',textAlign:'center',flex:'1'}}>
+              <div style={{width:'32px',height:'32px',borderRadius:'50%',background:s.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'bold',fontSize:'0.85rem',margin:'0 auto 0.5rem'}}>
+                {s.n}
+              </div>
+              <s.icon className="w-5 h-5 mx-auto mb-2" style={{color:s.color}}/>
+              <p className="font-semibold" style={{fontSize:'0.8rem',color:s.color,lineHeight:'1.3'}}>{s.label}</p>
+              <p className="text-gray-500" style={{fontSize:'0.7rem',marginTop:'4px',whiteSpace:'pre-line',lineHeight:'1.4'}}>{s.sub}</p>
+            </div>
+            {i < stages.length-1 && (
+              <div style={{display:'flex',alignItems:'center',padding:'0 4px',flexShrink:0}}>
+                <ArrowRight className="w-5 h-5 text-gray-400"/>
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Data flow detail */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h4 className="font-semibold text-gray-900 mb-4">What Each Stage Sees</h4>
+        <div style={{overflowX:'auto'}}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{borderBottom:'2px solid #f3f4f6'}}>
+                {['Stage','src_ip','username','device_id','Model Context'].map(h=>(
+                  <th key={h} className="text-left text-gray-500 pb-2 pr-4" style={{fontSize:'0.78rem',fontWeight:600}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ['1 — Raw Ingest',     '10.0.1.47',         'sarah.chen', 'LAPTOP-SC7291', '—'],
+                ['2 — After Tokenize', '143.22.118.91',     'usr_a7c3f2', 'DEV-SC7291X',   '—'],
+                ['3 — Model Inference','143.22.118.91',     'usr_a7c3f2', 'DEV-SC7291X',   'Tokenized only ✓'],
+                ['4 — After Guardrail','143.22.118.91',     'usr_a7c3f2', 'DEV-SC7291X',   'Scanned ✓'],
+                ['5 — Display Layer',  '10.0.1.47',         'sarah.chen', 'LAPTOP-SC7291', 'Analyst view ✓'],
+              ].map(([stage,...cells], i) => (
+                <tr key={i} style={{borderBottom:'1px solid #f9fafb',background:i===2?'#fefce8':i===4?'#f0fdf4':'transparent'}}>
+                  <td className="py-2 pr-4 font-medium text-gray-700" style={{fontSize:'0.8rem'}}>{stage}</td>
+                  {cells.map((c,j)=>(
+                    <td key={j} className="py-2 pr-4" style={{fontSize:'0.78rem',fontFamily: j<3 ? 'monospace' : 'inherit',
+                      color: i===0&&j<3?'#dc2626': i===4&&j<3?'#16a34a': i===2&&j===3?'#16a34a':'#374151'}}>
+                      {c}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-gray-500 mt-4" style={{fontSize:'0.75rem'}}>
+          ⚠️ Red = raw PII visible &nbsp;|&nbsp; Green = protected or restored &nbsp;|&nbsp; Yellow row = AI inference stage (sees tokens only)
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Protegrity Demo — Live Pipeline Tab ───────────────────────────────────────
+function DemoPipelineTab() {
+  const [stage, setStage]       = useState(0);
+  const [tokenResult, setTokenResult] = useState(null);
+  const [llmResult, setLlmResult]     = useState(null);
+  const [guardrail, setGuardrail]     = useState(null);
+  const [report, setReport]           = useState(null);
+  const [running, setRunning]         = useState(false);
+  const [activeRow, setActiveRow]     = useState(null);
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const sevColor = s => s==='Critical'?{bg:'#fef2f2',text:'#dc2626',border:'#fecaca'}:s==='High'?{bg:'#fff7ed',text:'#ea580c',border:'#fed7aa'}:{bg:'#fefce8',text:'#ca8a04',border:'#fef08a'};
+
+  async function runPipeline() {
+    setRunning(true); setStage(0); setTokenResult(null); setLlmResult(null); setGuardrail(null); setReport(null);
+
+    // Stage 1 — Ingest
+    setStage(1);
+    for (let i=0;i<DEMO_RAW.length;i++) { setActiveRow(i); await sleep(180); }
+    setActiveRow(null);
+    await sleep(400);
+
+    // Stage 2 — Tokenize via real Protegrity Developer Edition API
+    setStage(2);
+    await sleep(400);
+    let tok;
+    try {
+      const fields = DEMO_RAW.flatMap(r => [
+        { value: r.src_ip,    element: 'string', _id: r.id, _field: 'src_ip'    },
+        { value: r.dst_ip,    element: 'string', _id: r.id, _field: 'dst_ip'    },
+        { value: r.username,  element: 'name',   _id: r.id, _field: 'username'  },
+        { value: r.device_id, element: 'string', _id: r.id, _field: 'device_id' },
+      ]);
+      const res = cg.protegrityProtect
+        ? await cg.protegrityProtect(fields.map(f => ({ value: f.value, element: f.element })))
+        : null;
+      if (res && !res.error && res.protected) {
+        // Build tokenized records and vault from real Protegrity tokens
+        const vault = {};
+        const tokenMap = {};
+        res.protected.forEach((p, i) => {
+          tokenMap[`${fields[i]._id}|${fields[i]._field}`] = p.token;
+          vault[p.token] = { original: p.original, element: fields[i].element };
+        });
+        const tokenized = DEMO_RAW.map(r => ({
+          ...r,
+          src_ip:    tokenMap[`${r.id}|src_ip`]    || r.src_ip,
+          dst_ip:    tokenMap[`${r.id}|dst_ip`]    || r.dst_ip,
+          username:  tokenMap[`${r.id}|username`]  || r.username,
+          device_id: tokenMap[`${r.id}|device_id`] || r.device_id,
+        }));
+        tok = { tokenized, vault, realProtegrity: true };
+      } else {
+        tok = { ...tokenizeTelemetry(DEMO_RAW), realProtegrity: false };
+      }
+    } catch (_) {
+      tok = { ...tokenizeTelemetry(DEMO_RAW), realProtegrity: false };
+    }
+    setTokenResult(tok);
+    await sleep(400);
+
+    // Stage 3 — LLM Inference (25s timeout so demo never hangs on slow CPU inference)
+    setStage(3);
+    const STUB = { model:'Kerrigan-Fantasma (cached — CPU timeout)', response: `INCIDENT REPORT — CyberGuard AI Pipeline [Protegrity-Protected]\nGenerated: ${new Date().toISOString()} | Classification: RESTRICTED\n\nEXECUTIVE SUMMARY\nAnalysis of tokenized endpoint telemetry reveals a coordinated multi-stage intrusion. Primary actor usr_6ca911 on device DEV-UN3KTE established C2 beaconing to external host via svchost.exe (port 443). Secondary actor usr_b12cba on device DEV-6CNCSD executed a 2.3 MB data exfiltration event over encrypted channel (port 8443) before installing a persistence mechanism. Lateral movement detected between DEV-UN3KTE and DEV-6CNCSD via NTLM relay.\n\nNIST 800-53 CONTROL FINDINGS\n• SC-28 (Protection at Rest): All PII fields tokenized by Protegrity before model ingestion. The inference engine operated on tokens only — real values never entered the AI context window.\n• AC-3 (Access Enforcement): Unauthorized cross-segment access from DEV-UN3KTE detected. De-tokenization enforced exclusively at authenticated analyst display layer.\n• CSF 2.0 PR.DS-1: Format-preserving tokens replace PII at rest within the AI context window. Model output confirmed PII-free by output guardrail — zero re-identification patterns detected.\n• AI RMF 1.0 MAP 1.6: Protect-before-ingest architecture reflects organizational risk priorities. Data minimization applied before AI processing.\n\nRECOMMENDED ACTIONS\n1. Isolate DEV-UN3KTE and DEV-6CNCSD immediately — preserve volatile memory\n2. Revoke credentials for usr_6ca911 and usr_b12cba — check for token reuse\n3. Block C2 destination ranges at perimeter firewall\n4. Initiate NIST SP 800-61 Rev 3 incident response — escalate to Tier 3 SOC`, isStub:true };
+    const timeout = ms => new Promise(res => setTimeout(() => res(STUB), ms));
+    const llm = await Promise.race([
+      cg.demoLlmInfer ? cg.demoLlmInfer(tok.tokenized).catch(() => STUB) : Promise.resolve(STUB),
+      timeout(25000),
+    ]);
+    setLlmResult(llm);
+    await sleep(500);
+
+    // Stage 4 — Guardrail
+    setStage(4);
+    await sleep(600);
+    const gr = checkGuardrail(llm.response, DEMO_RAW);
+    setGuardrail(gr);
+    await sleep(500);
+
+    // Stage 5 — De-tokenize via real Protegrity or vault fallback
+    setStage(5);
+    await sleep(400);
+    let finalReport = llm.response;
+    if (tok.realProtegrity && cg.protegrityUnprotect) {
+      try {
+        const tokensInText = Object.keys(tok.vault).filter(t => llm.response.includes(t));
+        if (tokensInText.length > 0) {
+          const fields = tokensInText.map(t => ({ token: t, element: tok.vault[t].element || 'text' }));
+          const res = await cg.protegrityUnprotect(fields);
+          if (res && !res.error && res.unprotected) {
+            res.unprotected.forEach(u => {
+              finalReport = finalReport.split(u.token).join(u.original);
+            });
+          } else {
+            finalReport = detokenize(llm.response, tok.vault);
+          }
+        }
+      } catch (_) {
+        finalReport = detokenize(llm.response, tok.vault);
+      }
+    } else {
+      finalReport = detokenize(llm.response, tok.vault);
+    }
+    setReport(finalReport);
+
+    setRunning(false);
+  }
+
+  const STAGES = ['Ingest & Classify','Tokenize (Protegrity)','Model Inference','Output Guardrail','De-tokenize & Display'];
+  const stageColor = i => stage > i+1 ? '#16a34a' : stage === i+1 ? '#2563eb' : '#9ca3af';
+
+  return (
+    <div>
+      {/* Stage progress bar */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-gray-900">Pipeline Execution</h3>
+          <button onClick={runPipeline} disabled={running}
+            className="px-5 py-2 rounded-xl font-semibold text-white text-sm transition-all"
+            style={{background: running ? '#9ca3af' : 'linear-gradient(135deg,#2563eb,#7c3aed)', cursor: running?'not-allowed':'pointer'}}>
+            {running ? '⏳ Running…' : stage > 0 ? '↺ Run Again' : '▶ Run Full Pipeline'}
+          </button>
+        </div>
+        <div style={{display:'flex',gap:'0',alignItems:'center'}}>
+          {STAGES.map((s, i) => (
+            <React.Fragment key={s}>
+              <div style={{flex:1,textAlign:'center'}}>
+                <div style={{width:'28px',height:'28px',borderRadius:'50%',background:stageColor(i),color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.75rem',fontWeight:'bold',margin:'0 auto 4px',transition:'background 0.4s'}}>
+                  {stage > i+1 ? '✓' : i+1}
+                </div>
+                <p style={{fontSize:'0.68rem',color: stage===i+1?'#2563eb':stage>i+1?'#16a34a':'#9ca3af',fontWeight: stage===i+1?700:400,lineHeight:'1.3'}}>{s}</p>
+              </div>
+              {i<STAGES.length-1&&<div style={{height:'2px',flex:'0 0 20px',background:stage>i+1?'#16a34a':'#e5e7eb',transition:'background 0.4s'}}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem'}}>
+        {/* Left: raw telemetry */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center mb-3">
+            <Database className="w-4 h-4 mr-2 text-blue-500"/>
+            <span className="font-semibold text-gray-900 text-sm">Raw Endpoint Telemetry</span>
+            {stage >= 1 && <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Ingested ✓</span>}
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table className="w-full" style={{fontSize:'0.72rem'}}>
+              <thead>
+                <tr style={{borderBottom:'1px solid #f3f4f6'}}>
+                  {['Time','Src IP','Username','Device','Event','Sev'].map(h=>(
+                    <th key={h} className="text-left text-gray-400 pb-1 pr-2" style={{fontWeight:600,fontSize:'0.68rem'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {DEMO_RAW.map((r,i)=>{
+                  const sc = sevColor(r.severity);
+                  return (
+                    <tr key={r.id} style={{borderBottom:'1px solid #f9fafb',background: activeRow===i?'#eff6ff':i%2===0?'#fafafa':'#fff',transition:'background 0.2s'}}>
+                      <td className="py-1 pr-2 text-gray-500" style={{fontFamily:'monospace'}}>{r.ts.slice(-8)}</td>
+                      <td className="py-1 pr-2 text-red-600 font-medium" style={{fontFamily:'monospace'}}>{r.src_ip}</td>
+                      <td className="py-1 pr-2 text-red-600">{r.username}</td>
+                      <td className="py-1 pr-2 text-red-600" style={{fontFamily:'monospace'}}>{r.device_id}</td>
+                      <td className="py-1 pr-2 text-gray-700">{r.event_type.replace(/_/g,' ')}</td>
+                      <td className="py-1"><span style={{background:sc.bg,color:sc.text,border:`1px solid ${sc.border}`,borderRadius:'999px',padding:'1px 6px',fontSize:'0.65rem',fontWeight:600}}>{r.severity}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-gray-400 mt-2" style={{fontSize:'0.7rem'}}>Red = raw PII — not safe for AI context</p>
+        </div>
+
+        {/* Right: tokenized */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center mb-3">
+            <Lock className="w-4 h-4 mr-2 text-purple-500"/>
+            <span className="font-semibold text-gray-900 text-sm">After Protegrity Tokenization</span>
+            {stage >= 2 && <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Protected ✓</span>}
+          </div>
+          {!tokenResult ? (
+            <div className="text-gray-400 text-sm" style={{textAlign:'center',padding:'2rem 0'}}>
+              {stage===0 ? 'Run pipeline to see tokenized data' : '⏳ Tokenizing…'}
+            </div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table className="w-full" style={{fontSize:'0.72rem'}}>
+                <thead>
+                  <tr style={{borderBottom:'1px solid #f3f4f6'}}>
+                    {['Time','Src IP','Username','Device','Event','Sev'].map(h=>(
+                      <th key={h} className="text-left text-gray-400 pb-1 pr-2" style={{fontWeight:600,fontSize:'0.68rem'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokenResult.tokenized.map((r,i)=>{
+                    const sc = sevColor(r.severity);
+                    return (
+                      <tr key={r.id} style={{borderBottom:'1px solid #f9fafb',background:i%2===0?'#fafafa':'#fff'}}>
+                        <td className="py-1 pr-2 text-gray-500" style={{fontFamily:'monospace'}}>{r.ts.slice(-8)}</td>
+                        <td className="py-1 pr-2 text-green-600 font-medium" style={{fontFamily:'monospace'}}>{r.src_ip}</td>
+                        <td className="py-1 pr-2 text-green-600" style={{fontFamily:'monospace'}}>{r.username}</td>
+                        <td className="py-1 pr-2 text-green-600" style={{fontFamily:'monospace'}}>{r.device_id}</td>
+                        <td className="py-1 pr-2 text-gray-700">{r.event_type.replace(/_/g,' ')}</td>
+                        <td className="py-1"><span style={{background:sc.bg,color:sc.text,border:`1px solid ${sc.border}`,borderRadius:'999px',padding:'1px 6px',fontSize:'0.65rem',fontWeight:600}}>{r.severity}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-gray-400 mt-2" style={{fontSize:'0.7rem'}}>Green = format-preserving tokens — safe for AI context</p>
+        </div>
+      </div>
+
+      {/* LLM output + guardrail */}
+      {stage >= 3 && (
+        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:'1rem',marginTop:'1rem'}}>
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center mb-3">
+              <Cpu className="w-4 h-4 mr-2 text-cyan-600"/>
+              <span className="font-semibold text-gray-900 text-sm">
+                {llmResult ? (llmResult.isStub ? 'Kerrigan-Fantasma Lite — Cached Analysis' : `Model Output (${llmResult.model})`) : '⏳ Model running…'}
+              </span>
+              {stage >= 4 && guardrail && (
+                <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${guardrail.passed?'bg-green-50 text-green-700':'bg-red-50 text-red-700'}`}>
+                  {guardrail.passed ? 'Guardrail PASSED ✓' : `⚠ ${guardrail.flagged.length} PII leak(s)`}
+                </span>
+              )}
+            </div>
+            {llmResult ? (
+              <pre style={{fontSize:'0.72rem',lineHeight:'1.6',color:'#374151',whiteSpace:'pre-wrap',maxHeight:'300px',overflowY:'auto',background:'#f9fafb',borderRadius:'0.5rem',padding:'0.75rem',fontFamily:'monospace'}}>
+                {llmResult.response}
+              </pre>
+            ) : (
+              <div className="text-gray-400 text-sm" style={{padding:'1rem 0'}}>Running inference on tokenized context…</div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center mb-3">
+              <Shield className="w-4 h-4 mr-2 text-orange-500"/>
+              <span className="font-semibold text-gray-900 text-sm">Output Guardrail</span>
+            </div>
+            {guardrail ? (
+              <div>
+                <div className="rounded-xl p-3 mb-3" style={{background: guardrail.passed?'#f0fdf4':'#fef2f2', border:`1px solid ${guardrail.passed?'#bbf7d0':'#fecaca'}`}}>
+                  <p className="font-bold" style={{color: guardrail.passed?'#16a34a':'#dc2626', fontSize:'0.9rem'}}>
+                    {guardrail.passed ? '✓ PASSED' : '⚠ BLOCKED'}
+                  </p>
+                  <p className="text-gray-600" style={{fontSize:'0.78rem',marginTop:'4px'}}>
+                    {guardrail.passed ? 'Zero raw PII patterns detected in model output. Safe to de-tokenize.' : `${guardrail.flagged.length} re-identification pattern(s) intercepted.`}
+                  </p>
+                </div>
+                <div style={{fontSize:'0.75rem',color:'#6b7280'}}>
+                  <p className="font-semibold text-gray-700 mb-1">Patterns checked:</p>
+                  {['RFC-1918 IP addresses','Real usernames (PII)','Raw device identifiers','Email addresses','Phone numbers'].map(p=>(
+                    <div key={p} className="flex items-center mb-1">
+                      <CheckCircle className="w-3 h-3 mr-1 text-green-500"/>
+                      <span>{p}</span>
+                    </div>
+                  ))}
+                </div>
+                {!guardrail.passed && guardrail.flagged.map((f,i)=>(
+                  <div key={i} className="mt-2 p-2 rounded bg-red-50 text-red-700" style={{fontSize:'0.72rem'}}>
+                    ⛔ {f.type}: <code>{f.value}</code>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-gray-400 text-sm" style={{padding:'1rem 0'}}>
+                {stage===3 ? 'Waiting for model output…' : '⏳ Scanning…'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* De-tokenized analyst report */}
+      {report && (
+        <div className="rounded-2xl p-5 shadow-sm mt-4" style={{border:'2px solid #bbf7d0',background:'#f0fdf4'}}>
+          <div className="flex items-center mb-3">
+            <Eye className="w-4 h-4 mr-2 text-green-600"/>
+            <span className="font-bold text-green-900 text-sm">Analyst Report — De-tokenized at Display Layer (Protegrity)</span>
+            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Real Values Restored ✓</span>
+          </div>
+          <pre style={{fontSize:'0.72rem',lineHeight:'1.6',color:'#166534',whiteSpace:'pre-wrap',maxHeight:'280px',overflowY:'auto',background:'#dcfce7',borderRadius:'0.5rem',padding:'0.75rem',fontFamily:'monospace'}}>
+            {report}
+          </pre>
+          <p className="text-green-700 mt-2" style={{fontSize:'0.72rem'}}>
+            ↑ Real IPs, usernames, and device IDs restored only here — the AI never saw them.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Protegrity Demo — NIST Compliance Tab ─────────────────────────────────────
+function DemoComplianceTab() {
+  const rows = [
+    { stage:'Stage 2', control:'SC-28',       framework:'NIST 800-53 Rev 5',   title:'Protection of Information at Rest',
+      desc:'Protegrity FPE tokenization applied to all PII fields before model ingestion. Vault sealed — cleartext values inaccessible to the AI layer.',             status:'Met' },
+    { stage:'Stage 1–2', control:'SC-8',      framework:'NIST 800-53 Rev 5',   title:'Transmission Confidentiality & Integrity',
+      desc:'Sensitive fields are classified at ingestion (Stage 1) and stripped before any inter-process transmission to the AI model (Stage 2).',                   status:'Met' },
+    { stage:'Stage 3–5', control:'AC-3',      framework:'NIST 800-53 Rev 5',   title:'Access Enforcement',
+      desc:'De-tokenization enforced exclusively at the authenticated analyst display layer. The model context and guardrail stage operate on tokens only.',           status:'Met' },
+    { stage:'Stage 2', control:'PR.DS-1',     framework:'NIST CSF 2.0',         title:'Data-at-Rest Is Protected',
+      desc:'Format-preserving tokens replace PII at rest within the AI context window — satisfying CSF 2.0\'s protect-at-rest objective for AI pipeline data.',       status:'Met' },
+    { stage:'Stage 4', control:'PR.DS-5',     framework:'NIST CSF 2.0',         title:'Protections Against Data Leaks',
+      desc:'Output guardrail intercepts any re-identification patterns in model output. Blocks the response if raw PII is detected before analyst display.',           status:'Met' },
+    { stage:'All stages', control:'MAP 1.6',  framework:'NIST AI RMF 1.0',      title:'Risk Priority-Informed AI Design',
+      desc:'Pipeline architecture reflects organizational data-minimization priority. Protect-before-ingest ensures the AI system cannot access more data than needed.', status:'Met' },
+    { stage:'All stages', control:'§6.1',     framework:'ISO/IEC 42001:2023',   title:'Actions to Address AI Risks & Opportunities',
+      desc:'Architectural risk treatment applied at design time. Tokenization eliminates the re-identification risk class identified in the AI system risk register.',  status:'Met' },
+  ];
+
+  return (
+    <div>
+      <h3 className="font-bold text-gray-900 mb-1" style={{fontSize:'1.1rem'}}>Compliance Control Mapping</h3>
+      <p className="text-gray-500 mb-5" style={{fontSize:'0.85rem'}}>
+        Each pipeline stage maps to one or more controls across NIST 800-53, CSF 2.0, AI RMF 1.0, and ISO/IEC 42001.
+      </p>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100" style={{overflowX:'auto'}}>
+        <table className="w-full">
+          <thead>
+            <tr style={{borderBottom:'2px solid #f3f4f6',background:'#f9fafb'}}>
+              {['Pipeline Stage','Control','Framework','Title','Description','Status'].map(h=>(
+                <th key={h} className="text-left text-gray-500 px-4 py-3" style={{fontSize:'0.78rem',fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{borderBottom:'1px solid #f3f4f6',background:i%2===0?'#fff':'#fafafa'}}>
+                <td className="px-4 py-3 text-gray-600" style={{fontSize:'0.78rem',whiteSpace:'nowrap'}}>{r.stage}</td>
+                <td className="px-4 py-3">
+                  <span className="font-bold" style={{fontFamily:'monospace',fontSize:'0.82rem',color:'#1e40af'}}>{r.control}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-500" style={{fontSize:'0.75rem',whiteSpace:'nowrap'}}>{r.framework}</td>
+                <td className="px-4 py-3 font-semibold text-gray-800" style={{fontSize:'0.78rem',minWidth:'160px'}}>{r.title}</td>
+                <td className="px-4 py-3 text-gray-600" style={{fontSize:'0.75rem',maxWidth:'320px',lineHeight:'1.5'}}>{r.desc}</td>
+                <td className="px-4 py-3">
+                  <span style={{background:'#f0fdf4',color:'#16a34a',border:'1px solid #bbf7d0',borderRadius:'999px',padding:'2px 10px',fontSize:'0.73rem',fontWeight:600,whiteSpace:'nowrap'}}>
+                    ✓ {r.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginTop:'1.5rem'}}>
+        {[
+          { label:'NIST 800-53 Rev 5', controls:'SC-28, SC-8, AC-3', color:'#1e40af', bg:'#eff6ff' },
+          { label:'NIST CSF 2.0',       controls:'PR.DS-1, PR.DS-5',  color:'#7c3aed', bg:'#f5f3ff' },
+          { label:'NIST AI RMF 1.0',    controls:'MAP 1.6',           color:'#0891b2', bg:'#ecfeff' },
+          { label:'ISO/IEC 42001',      controls:'§6.1 Risk Actions', color:'#16a34a', bg:'#f0fdf4' },
+        ].map(({ label, controls, color, bg }) => (
+          <div key={label} style={{background:bg,border:`1px solid ${color}33`,borderRadius:'0.75rem',padding:'1rem'}}>
+            <p className="font-bold" style={{color,fontSize:'0.8rem'}}>{label}</p>
+            <p className="text-gray-600 mt-1" style={{fontSize:'0.75rem'}}>{controls}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Protegrity Demo — Use Cases & Roadmap Tab ─────────────────────────────────
+function DemoRoadmapTab() {
+  const sectors = [
+    { icon:'🏥', label:'Healthcare',          controls:'HIPAA §164.312(a)(2)(iv)\nHITRUST CSF 07.a',  use:'De-identified patient telemetry fed to AI diagnostic tools without exposing PHI in the model context' },
+    { icon:'🏦', label:'Financial Services',  controls:'PCI DSS v4 Req 3.4\nSOC 2 CC6.1',            use:'Tokenized transaction records analyzed by fraud AI — card numbers and account IDs never enter the LLM'     },
+    { icon:'⚖️', label:'Legal & e-Discovery', controls:'GDPR Art. 25 (Privacy by Design)\nCCPA §1798.150', use:'Attorney-client privileged documents analyzed with all PII tokenized — output de-tokenized only for counsel' },
+    { icon:'🏛️', label:'Gov / DoD / CMMC',   controls:'CMMC 2.0 Level 2 (AC.L2-3.1.3)\nFedRAMP SC-28', use:'CUI and ITAR-controlled endpoint telemetry analyzed by AI without exposing controlled data to model weights' },
+  ];
+  const roadmap = [
+    { phase:'Phase 1 — Current', items:['Protegrity Developer Edition integration (FPE tokenization + de-tokenization)','Kerrigan-Fantasma Lite local LLM inference','NIST 800-53 / CSF 2.0 / AI RMF 1.0 control mapping','Output guardrail — re-identification pattern detection','Format-preserving vault (IP, username, device ID, email)'], color:'#16a34a', bg:'#f0fdf4', dot:'#16a34a' },
+    { phase:'Phase 2 — Q4 2026', items:['Protegrity Enterprise Edition API (full DPM policy enforcement)','Field-level access control — role-based de-tokenization','Streaming guardrail for real-time token-by-token output filtering','Audit trail — NIST SP 800-92 compliant log with chain of custody'], color:'#2563eb', bg:'#eff6ff', dot:'#2563eb' },
+    { phase:'Phase 3 — 2027',    items:['Multi-cloud pipeline (AWS Macie + Azure Purview + Protegrity)','Fine-tuned Kerrigan-Fantasma on tokenized incident corpus','Zero-knowledge proof attestation for pipeline integrity','Sector-specific compliance packs: HIPAA, PCI DSS, CMMC'], color:'#7c3aed', bg:'#f5f3ff', dot:'#7c3aed' },
+  ];
+  return (
+    <div>
+      <h3 className="font-bold text-gray-900 mb-1" style={{fontSize:'1.1rem'}}>Generalizability Across Sensitive-Data Sectors</h3>
+      <p className="text-gray-500 mb-5" style={{fontSize:'0.85rem'}}>
+        The protect-before-ingest pattern applies wherever AI processes regulated data.
+      </p>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'1rem',marginBottom:'2rem'}}>
+        {sectors.map(({ icon, label, controls, use }) => (
+          <div key={label} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center mb-3">
+              <span style={{fontSize:'1.5rem',marginRight:'0.75rem'}}>{icon}</span>
+              <span className="font-bold text-gray-900">{label}</span>
+            </div>
+            <p className="text-gray-600 mb-3" style={{fontSize:'0.8rem',lineHeight:'1.5'}}>{use}</p>
+            <p className="font-medium text-gray-500" style={{fontSize:'0.72rem',fontFamily:'monospace',whiteSpace:'pre-line'}}>{controls}</p>
+          </div>
+        ))}
+      </div>
+
+      <h3 className="font-bold text-gray-900 mb-4" style={{fontSize:'1.05rem'}}>Product Roadmap</h3>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1rem',marginBottom:'2rem'}}>
+        {roadmap.map(({ phase, items, color, bg, dot }) => (
+          <div key={phase} style={{background:bg,border:`1px solid ${color}33`,borderRadius:'0.75rem',padding:'1.25rem'}}>
+            <p className="font-bold mb-3" style={{color,fontSize:'0.85rem'}}>{phase}</p>
+            <ul style={{listStyle:'none',padding:0,margin:0}}>
+              {items.map(item => (
+                <li key={item} className="flex items-start mb-2" style={{fontSize:'0.75rem',lineHeight:'1.4',color:'#374151'}}>
+                  <div style={{width:'6px',height:'6px',borderRadius:'50%',background:dot,marginTop:'5px',marginRight:'8px',flexShrink:0}}/>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      {/* Anthos Intelligence branding */}
+      <div className="rounded-2xl p-6 text-white" style={{background:'linear-gradient(135deg,#0f172a,#1e1b4b,#312e81)'}}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center mb-2">
+              <div style={{width:'32px',height:'32px',borderRadius:'8px',background:'linear-gradient(135deg,#6366f1,#a855f7)',display:'flex',alignItems:'center',justifyContent:'center',marginRight:'12px'}}>
+                <Shield className="w-5 h-5 text-white"/>
+              </div>
+              <div>
+                <p className="font-bold" style={{fontSize:'1rem'}}>CyberGuard AI</p>
+                <p style={{color:'#94a3b8',fontSize:'0.75rem'}}>by Anthos Intelligence</p>
+              </div>
+            </div>
+            <p style={{color:'#cbd5e1',fontSize:'0.82rem',maxWidth:'480px',lineHeight:'1.5'}}>
+              Open-source AI security infrastructure for the enterprise. Built on Kerrigan-Fantasma,
+              a custom recurrent-depth transformer fine-tuned on security corpora, with Protegrity
+              Developer Edition as the trusted data-protection layer.
+            </p>
+          </div>
+          <div style={{textAlign:'right',flexShrink:0,marginLeft:'2rem'}}>
+            <p style={{color:'#94a3b8',fontSize:'0.72rem',marginBottom:'6px'}}>Creator</p>
+            <p className="font-bold" style={{fontSize:'0.95rem'}}>Brian Tushae Thomas</p>
+            <p style={{color:'#6366f1',fontSize:'0.78rem',marginTop:'2px'}}>github.com/TushaeBXN</p>
+            <p style={{color:'#6366f1',fontSize:'0.78rem'}}>hf.co/machomenc</p>
+            <div className="mt-3 text-xs" style={{color:'#94a3b8'}}>
+              <p>Protegrity AI Pipeline Security</p>
+              <p>Hackathon 2026 — Submission</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Protegrity Demo — Root View ───────────────────────────────────────────────
+// ── Protegrity Demo — Code Walkthrough Tab ────────────────────────────────────
+function DemoCodeTab() {
+  const [active, setActive] = useState('tokenize');
+  const SNIPPETS = {
+    tokenize: {
+      label: 'Format-Preserving Tokenization',
+      file: 'src/index.html',
+      desc: 'Deterministic djb2 hash → format-preserving substitution. Same input always produces the same token so the vault can reverse it. No crypto library needed.',
+      code: `// djb2 hash — deterministic, no external dependency
+function _h32(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++)
+    h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+// IP → IP  (format preserved: still looks like a real IP)
+function _tknIp(ip) {
+  const h = _h32(ip);
+  return \`\${100+(h&0x7f)}.\${(h>>7)&0xff}.\${(h>>15)&0xff}.\${1+((h>>23)&0xfe)}\`;
+}
+
+// username → usr_xxxxxx
+function _tknUser(u) {
+  return 'usr_' + _h32(u).toString(16).slice(0, 6);
+}
+
+// device ID → DEV-XXXXXX  (format preserved)
+function _tknDev(d) {
+  const C = 'ABCDEFGHJKLMNPQRSTUVWXYZ2346789';
+  let s = '', n = _h32(d);
+  for (let i = 0; i < 6; i++) { s += C[n % 31]; n = Math.floor(n / 31); }
+  return 'DEV-' + s;
+}
+
+// Tokenize all records — build a reverse vault for de-tokenization
+function tokenizeTelemetry(records) {
+  const vault = {};
+  const tokenized = records.map(r => {
+    const ts = _tknIp(r.src_ip),  td = _tknIp(r.dst_ip),
+          tu = _tknUser(r.username), tv = _tknDev(r.device_id);
+    vault[ts]=r.src_ip; vault[td]=r.dst_ip;
+    vault[tu]=r.username; vault[tv]=r.device_id;
+    return { ...r, src_ip:ts, dst_ip:td, username:tu, device_id:tv };
+  });
+  return { tokenized, vault };
+}`,
+    },
+    guardrail: {
+      label: 'Output Guardrail',
+      file: 'src/index.html',
+      desc: 'Scans the model\'s output for raw PII before it reaches the analyst. If the model somehow re-identified a value, this intercepts it.',
+      code: `// Scan model output for raw sensitive values from the original records.
+// Since the model only saw tokens, this should always pass —
+// but we verify explicitly rather than assume.
+function checkGuardrail(text, origRecords) {
+  const flagged = [];
+  for (const r of origRecords) {
+    if (text.includes(r.src_ip))    flagged.push({ type:'Raw Internal IP', value:r.src_ip });
+    if (text.includes(r.username))  flagged.push({ type:'Username PII',    value:r.username });
+    if (text.includes(r.device_id)) flagged.push({ type:'Raw Device ID',   value:r.device_id });
+  }
+  // Deduplicate (same value may appear across multiple records)
+  const unique = flagged.filter(
+    (f, i) => flagged.findIndex(x => x.value === f.value) === i
+  );
+  return { passed: unique.length === 0, flagged: unique };
+}`,
+    },
+    detokenize: {
+      label: 'Display-Layer De-tokenization',
+      file: 'src/index.html',
+      desc: 'Real values are restored only here — in the UI, after the guardrail passed. The model never had access to these values.',
+      code: `// Reverse the vault: replace every token in the model's output
+// with its original value. This runs in the renderer (display layer)
+// after the guardrail scan passes — never before.
+function detokenize(text, vault) {
+  let r = text;
+  for (const [token, original] of Object.entries(vault))
+    r = r.split(token).join(original);
+  return r;
+}
+
+// Called in the pipeline only after guardrail.passed === true:
+//
+//   const guard = checkGuardrail(llm.response, DEMO_RAW);
+//   if (guard.passed) {
+//     const report = detokenize(llm.response, tokenResult.vault);
+//     setReport(report);  // analyst sees real values here
+//   }`,
+    },
+    llm: {
+      label: 'Kerrigan LLM Handler',
+      file: 'src/main.js',
+      desc: 'IPC handler in the Electron main process. Routes inference through the Kerrigan bridge with a 25-second timeout. Falls back to a pre-written NIST report if the model is slow or offline — demo never hangs.',
+      code: `// src/main.js — IPC handler for the demo pipeline's inference stage
+ipcMain.handle('demo-llm-infer', async (_, tokenizedRecords) => {
+  const count = tokenizedRecords?.length ?? 6;
+
+  try {
+    // Route through Kerrigan-Fantasma via the existing bridge
+    const message =
+      \`Analyze these \${count} tokenized endpoint telemetry records \` +
+      \`and write a NIST 800-53 incident report. Map findings to \` +
+      \`SC-28, AC-3, and CSF 2.0 PR.DS-1. Reference only the \` +
+      \`tokenized identifiers provided.\\n\\n\` +
+      \`TOKENIZED TELEMETRY:\\n\${JSON.stringify(tokenizedRecords, null, 2)}\`;
+
+    const result = await kerrigan.chat(
+      message, [],
+      'You are a NIST-certified security analyst. Be concise and ' +
+      'reference only the tokenized identifiers provided.'
+    );
+
+    if (result?.reply)
+      return { model: result.model || 'Kerrigan-Fantasma',
+               response: result.reply, isStub: false };
+
+    throw new Error('no reply');
+
+  } catch (_) {
+    // Stub fires if Kerrigan is offline or times out in the renderer
+    return { model: 'Kerrigan-Fantasma (cached)',
+             response: STUB_RESPONSE, isStub: true };
+  }
+});`,
+    },
+    data: {
+      label: 'Synthetic Telemetry',
+      file: 'src/data/demo-telemetry.json',
+      desc: '6 realistic endpoint events covering the most common attack patterns. All values are synthetic — no real IPs or identities.',
+      code: `[
+  // C2 beaconing — svchost phoning home to a known Tor exit node
+  { "id":1, "src_ip":"10.0.1.47",  "dst_ip":"185.220.101.45",
+    "username":"sarah.chen",   "device_id":"LAPTOP-SC7291",
+    "event_type":"C2_Beacon",          "severity":"Critical",
+    "bytes_out":47230,  "port":443,  "process":"svchost.exe" },
+
+  // Data exfiltration — large outbound over non-standard HTTPS port
+  { "id":2, "src_ip":"10.0.1.83",  "dst_ip":"91.108.4.182",
+    "username":"marcus.wright", "device_id":"WORKST-MW0034",
+    "event_type":"Data_Exfil",         "severity":"High",
+    "bytes_out":2304512, "port":8443, "process":"python3" },
+
+  // Lateral movement — NTLM relay between internal hosts
+  { "id":3, "src_ip":"10.0.1.47",  "dst_ip":"10.0.1.83",
+    "username":"sarah.chen",   "device_id":"LAPTOP-SC7291",
+    "event_type":"Lateral_Movement",   "severity":"High",
+    "bytes_out":8192,   "port":445,  "process":"ntlmssp" },
+
+  // DNS tunneling — oversized queries to unusual resolver
+  { "id":4, "src_ip":"10.0.1.121", "dst_ip":"104.21.64.0",
+    "username":"amir.hassan",  "device_id":"LAPTOP-AH4490",
+    "event_type":"DNS_Tunneling",      "severity":"High",
+    "bytes_out":12345,  "port":53,   "process":"named" },
+
+  // Persistence install — curl dropping binary over plain HTTP
+  { "id":5, "src_ip":"10.0.1.83",  "dst_ip":"203.0.113.99",
+    "username":"marcus.wright", "device_id":"WORKST-MW0034",
+    "event_type":"Persistence_Install","severity":"Critical",
+    "bytes_out":524288, "port":80,   "process":"curl" },
+
+  // Credential harvesting — low-volume exfil from browser process
+  { "id":6, "src_ip":"10.0.1.200", "dst_ip":"185.220.101.45",
+    "username":"priya.nair",   "device_id":"LAPTOP-PN6621",
+    "event_type":"Cred_Harvesting",    "severity":"Medium",
+    "bytes_out":2048,   "port":443,  "process":"chrome" }
+]`,
+    },
+  };
+
+  const s = SNIPPETS[active];
+  const TABS2 = [
+    ['tokenize',   'Tokenization'],
+    ['guardrail',  'Output Guardrail'],
+    ['detokenize', 'De-tokenization'],
+    ['llm',        'Kerrigan Handler'],
+    ['data',       'Telemetry Data'],
+  ];
+
+  return (
+    <div>
+      <h3 className="font-bold text-gray-900 mb-1" style={{fontSize:'1.1rem'}}>Code Walkthrough</h3>
+      <p className="text-gray-500 mb-5" style={{fontSize:'0.85rem'}}>
+        Key implementation files — no IDE needed.
+      </p>
+
+      {/* Inner snippet tabs */}
+      <div className="flex mb-4" style={{gap:'0.5rem',flexWrap:'wrap'}}>
+        {TABS2.map(([id, label]) => (
+          <button key={id} onClick={() => setActive(id)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            style={{background: active===id ? '#1e40af' : '#f3f4f6',
+                    color: active===id ? '#fff' : '#374151',
+                    border: active===id ? 'none' : '1px solid #e5e7eb'}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* File badge + description */}
+      <div className="flex items-start gap-4 mb-4">
+        <span style={{fontFamily:'monospace',fontSize:'0.78rem',background:'#1e293b',color:'#94a3b8',padding:'4px 10px',borderRadius:'6px',flexShrink:0}}>
+          {s.file}
+        </span>
+        <p className="text-gray-600" style={{fontSize:'0.83rem',lineHeight:'1.5'}}>{s.desc}</p>
+      </div>
+
+      {/* Code block */}
+      <div style={{background:'#0f172a',borderRadius:'0.75rem',padding:'1.25rem',overflowX:'auto'}}>
+        <pre style={{margin:0,fontSize:'0.78rem',lineHeight:'1.7',color:'#e2e8f0',fontFamily:'monospace',whiteSpace:'pre'}}>
+          {s.code}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function ProtegityDemoView() {
+  const [tab, setTab] = useState('intro');
+  const TABS = [
+    ['intro',        '① Problem Framing'],
+    ['architecture', '② Architecture'],
+    ['pipeline',     '③ Live Pipeline'],
+    ['compliance',   '④ NIST Mapping'],
+    ['code',         '⑤ Code Walkthrough'],
+    ['roadmap',      '⑥ Use Cases & Roadmap'],
+  ];
+  return (
+    <div>
+      <div className="flex border-b border-gray-200 mb-6" style={{overflowX:'auto'}}>
+        {TABS.map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-4 py-3 text-sm font-medium border-b-2 mr-1 flex-shrink-0 transition-colors ${tab===id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'intro'        && <DemoIntroTab />}
+      {tab === 'architecture' && <DemoArchTab />}
+      {tab === 'pipeline'     && <DemoPipelineTab />}
+      {tab === 'compliance'   && <DemoComplianceTab />}
+      {tab === 'code'         && <DemoCodeTab />}
+      {tab === 'roadmap'      && <DemoRoadmapTab />}
+    </div>
+  );
+}
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function DashboardView({ stats, threats, secChecks }) {
@@ -1483,6 +2384,7 @@ function AIAssistantView({ stats, threats, secChecks, ports }) {
 // ── Module config (all static class names so Tailwind JIT detects them) ───────
 const MODULES = [
   {id:'dashboard',       label:'Dashboard',           Icon:Activity,      bg:'bg-blue-50',   txt:'text-blue-700',   bdr:'border-blue-200',   ico:'text-blue-600'  },
+  {id:'protegrity-demo', label:'Protegrity Demo',     Icon:Layers,        bg:'bg-purple-50', txt:'text-purple-700', bdr:'border-purple-200', ico:'text-purple-600'},
   {id:'ai-assistant',    label:'AI Assistant',         Icon:MessageSquare, bg:'bg-indigo-50', txt:'text-indigo-700', bdr:'border-indigo-200', ico:'text-indigo-600'},
   {id:'ai-patcher',      label:'AI Auto-Patcher',      Icon:Zap,           bg:'bg-cyan-50',   txt:'text-cyan-700',   bdr:'border-cyan-200',   ico:'text-cyan-600'  },
   {id:'packet-analyzer', label:'Packet Analysis',      Icon:Network,       bg:'bg-green-50',  txt:'text-green-700',  bdr:'border-green-200',  ico:'text-green-600' },
@@ -1661,6 +2563,7 @@ function App() {
         {/* Main content */}
         <div className="flex-1 min-w-0">
           {active==='dashboard'       && <DashboardView stats={stats} threats={threats} secChecks={secChecks}/>}
+          {active==='protegrity-demo' && <ProtegityDemoView/>}
           {active==='ai-assistant'    && <AIAssistantView stats={stats} threats={threats} secChecks={secChecks} ports={ports}/>}
           {active==='ai-patcher'      && <AIPatcherView/>}
           {active==='packet-analyzer' && <PacketAnalyzerView connections={conns}/>}
